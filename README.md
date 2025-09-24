@@ -5,7 +5,7 @@
 - для парсинга данных - [historical_data_parsing.py](backtesting/historical_data_parsing.py) (требуется переделать);
 - для доступа к данным - [historical_data_access.py](backtesting/historical_data_access.py).
 
-  > Доступны функции получения типа тикера, полного пути файла с историческими данными, возвращения данных в определённом формате.
+> Доступны функции получения типа тикера, полного пути файла с историческими данными, возвращения данных в определённом формате.
 - оптимизация стратегии - [optimization.py](backtesting/optimization.py);
 - шаблон стратегии - [strategy_template.py](backtesting/strategy_template.py);
 - визуализация результатов стратегии - [backtesting/strategy_visualization.py](backtesting/strategy_visualization.py);
