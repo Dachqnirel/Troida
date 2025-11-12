@@ -70,7 +70,7 @@ def generate_path_parquit(shore_config: StockConfig, directory: str, action: Rep
         path_report_parquit: Path = directory_parquit / filename_parquit
         return path_report_parquit
     if action == ReportType.VERIFIED_REPORT:
-        base_directory: Path = path_report_parquit / "VERIFIED_REPORTS_SHORES" / "parquit"
+        base_directory: Path = Path(directory) / "VERIFIED_REPORTS_SHORES" / "parquit"
         directory_parquit: Path = base_directory / f"{datetime.strftime(shore_config.from_date, '%d.%m.%Y %H.%M.%S')} - {datetime.strftime(shore_config.to_date, '%d.%m.%Y %H.%M.%S')}"
         filename_parquit: Path = tAPI._generate_filename(shore_config.ticker,
                                                 shore_config.interval,

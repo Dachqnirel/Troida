@@ -11,8 +11,8 @@ instrumentTypes:
   INSTRUMENT_TYPE_INDEX: &index 9
   INSTRUMENT_TYPE_COMMODITY: &commodity 10
 
-fromDate: &from_date "21.10.2024 13:00:00" # UTC
-toDate: &to_date "21.10.2025 13:00:00" # UTC
+fromDate: &from_date "08.10.2024 13:00:00" # UTC
+toDate: &to_date "09.10.2025 13:00:00" # UTC
 
 stock:
   Sberbank:

@@ -16,7 +16,7 @@ from packages.core import logging
 from dotenv import load_dotenv
 
 # Получение токена авторизации из переменных окружения
-load_dotenv("./.env")
+load_dotenv()
 TINKOFF_TOKEN = os.getenv('TINKOFF_TOKEN')
 if not TINKOFF_TOKEN:
     raise ValueError("TINKOFF_TOKEN не задан в переменных окружения")

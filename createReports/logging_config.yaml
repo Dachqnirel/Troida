@@ -29,7 +29,7 @@ loggers:
   my_app:
     level: DEBUG
     handlers: [console, error_file]
-    propagate: true  # Измените на false чтобы избежать дублирования
+    propagate: false  # Измените на false чтобы избежать дублирования
 
 root:
   level: INFO
