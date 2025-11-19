@@ -3,12 +3,13 @@
 ## Подкоманда "Данные и бэктест"
 
 ### Состав команды:
-1. [Макарова Софья 241-363](https://gitverse.ru/sonteikamaki)
-2. [Крупенин Владимир 231-3210](https://gitverse.ru/bamsz)
-3. [Ортанов Астемир 241-331](https://gitverse.ru/ctotochtoto)
-4. [Саливонов Никита 221-361](https://gitverse.ru/yoshiultras)
-5. [Леоненко Роман 241-3211](https://gitverse.ru/k0swel)
-6. [Молодкин Тимофей 241-363](https://gitverse.ru/timofeyagiwait)
+1. Макарова Софья 241-363
+2. Крупенин Владимир 231-3210
+3. Ортанов Астемир 241-331
+4. Саливонов Никита 221-361
+5. Леоненко Роман 241-3211
+6. Молодкин Тимофей 241-363
+7. [Сарафанов Никита 231-336](https://github.com/niksanhts)
 
 ### Задачи:
 [\*клик\*](https://docs.google.com/spreadsheets/d/1-eBKuSCimcO7rF1RXgTLscJefoh6DgPYIRA3L1fgVOA/edit?gid=0#gid=0)
