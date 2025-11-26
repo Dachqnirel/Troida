@@ -24,7 +24,7 @@ import pandas as pd
 from rolling_catboost import (load_csv, acf1_safe, build_dataset, time_split_by_ratio, prepare_eval_set_unseen, fit_catboost_multiclass, build_catboost_params,)
 
 
-# ИНДИКАТОР: MACD (Moving Average Convergence Divergence) - основная линия = EMA(fast) - EMA(slow); сигнальная = EMA(основной линии, signal)
+# ИНДИКАТОР: MACD (Moving Average Convergence Divergence): 1) основная линия = EMA(fast) - EMA(slow). 2) сигнальная = EMA(основной линии, signal).
 def _ema(x: pd.Series, period: int) -> pd.Series:
     return x.ewm(span=period, adjust=False).mean()
 
