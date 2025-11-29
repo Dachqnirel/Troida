@@ -49,26 +49,24 @@ _INTERVAL_MAPPING = {
 # Обратное соответствие для преобразования строк в enum
 _REVERSE_INTERVAL_MAPPING = {v: k for k, v in _INTERVAL_MAPPING.items()}
 
-def _initialize_instruments_cache() -> None:
+
+
+async def _initialize_instruments_cache() -> None:
     """
     Инициализирует кэш инструментов один раз при старте.
     Создает быстрый кэш тикер -> instrument для максимальной производительности.
     """
     
-    with Client(TINKOFF_TOKEN) as client:
-        cache = InstrumentsCache(
-            settings=InstrumentsCacheSettings(), 
-            instruments_service=client.instruments,
-        )
-
+    async with AsyncClient(TINKOFF_TOKEN) as client:
         # Получаем все типы инструментов
-        instrument_sources = [
-            cache.shares().instruments,
-            cache.bonds().instruments,
-            cache.etfs().instruments,
-            cache.currencies().instruments,
-            cache.futures().instruments,
-        ]
+        instrument_sources = await asyncio.gather(
+            client.instruments.shares(),
+            client.instruments.bonds(),
+            client.instruments.etfs(),
+            client.instruments.currencies(),
+            client.instruments.futures())
+
+        instrument_sources = [instrument_type.instruments for instrument_type in instrument_sources]
 
         # Фильтрация инструментов
         for instruments in instrument_sources:
@@ -80,7 +78,7 @@ def _initialize_instruments_cache() -> None:
                         instrument.sell_available_flag == True:
                     _instruments_cache[ticker] = instrument
 
-def _get_figi_by_ticker(ticker: str) -> str:
+async def _get_figi_by_ticker(ticker: str) -> str:
     """
     Получает FIGI инструмента по тикеру с максимальной производительностью.
     Использует предварительно построенный кэш.
@@ -96,7 +94,7 @@ def _get_figi_by_ticker(ticker: str) -> str:
     """
     # Инициализируем кэш при первом вызове
     if not _instruments_cache:
-        _initialize_instruments_cache()
+        await _initialize_instruments_cache()
     
     if ticker in _instruments_cache:
         return _instruments_cache[ticker].figi
@@ -221,7 +219,7 @@ async def download_candles(ticker: str, interval: str, from_date: datetime, to_d
     if interval is None:
         return None
 
-    figi = _get_figi_by_ticker(ticker)
+    figi = await _get_figi_by_ticker(ticker)
     logging.logger.info(f'figi {figi}')
     all_candles_data = []
 
