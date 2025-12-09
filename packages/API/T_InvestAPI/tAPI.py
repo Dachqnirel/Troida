@@ -460,3 +460,87 @@ async def load_multiple_candles(instruments: List[Dict], max_concurrent: int=2) 
 # if __name__ == "__main__": 
 #     import asyncio 
 #     asyncio.run(main())
+
+async def download_dividends(ticker: str, from_date: datetime, to_date: datetime) -> Optional[pd.DataFrame]:
+    """
+    Загружает события выплаты дивидендов по инструменту из Tinkoff Invest API.
+
+    Args:
+        ticker (str): Тикер инструмента
+        from_date (datetime): Начальная дата периода (UTC)
+        to_date (datetime): Конечная дата периода (UTC)
+
+    Returns:
+        Optional[pd.DataFrame]: DataFrame с дивидендами или None, если ничего нет
+    """
+    # Получаем FIGI по тикеру через уже существующий кэш
+    figi = await _get_figi_by_ticker(ticker)
+    logging.logger.info(f'Загрузка дивидендов для {ticker}, figi={figi}')
+
+    client = await _get_client()
+
+    # Tinkoff API допускает большой интервал, но для единообразия можем разбить по годам/месяцам
+    # Здесь для простоты используем один запрос на весь диапазон
+    all_divs_data = []
+
+    while True:
+        try:
+            response = await client.instruments.get_dividends(
+                figi=figi,
+                from_=from_date,
+                to=to_date,
+            )
+            break
+        except Exception as e:
+            if 'RESOURCE_EXHAUSTED' in str(e) or 'ratelimit' in str(e).lower():
+                wait_time = _extract_wait_time_from_error(e)
+                print(f"{ticker}: Ждем {wait_time} сек (dividends)...")
+                await asyncio.sleep(wait_time)
+            else:
+                logging.logger.error(f"Ошибка при получении дивидендов для {ticker}: {e}")
+                return None
+
+    # Преобразуем ответ в список кортежей
+    # Структура Dividends: declared_date, last_buy_date, registry_close_date,
+    # payment_date, dividend_net, close_price, yield_value, yield_real, currency и т.д.[web:50][web:57]
+    for div in response.dividends:
+        all_divs_data.append(
+            (
+                div.declared_date,       # дата объявления
+                div.last_buy_date,       # последняя дата покупки для получения дивидендов
+                div.registry_close_date, # дата закрытия реестра
+                div.payment_date,        # дата выплаты
+                float(quotation_to_decimal(div.dividend_net)) if div.dividend_net is not None else None,
+                float(quotation_to_decimal(div.dividend_gross)) if hasattr(div, 'dividend_gross') and div.dividend_gross is not None else None,
+                div.currency,
+                float(quotation_to_decimal(div.close_price)) if div.close_price is not None else None,
+                float(quotation_to_decimal(div.yield_value)) if div.yield_value is not None else None,
+                float(quotation_to_decimal(div.yield_real)) if div.yield_real is not None else None,
+            )
+        )
+
+    if not all_divs_data:
+        return None
+
+    df = pd.DataFrame(
+        all_divs_data,
+        columns=[
+            "declared_date",
+            "last_buy_date",
+            "registry_close_date",
+            "payment_date",
+            "dividend_net",
+            "dividend_gross",
+            "currency",
+            "close_price",
+            "yield_value",
+            "yield_real",
+        ],
+    )
+
+    # Приводим даты к datetime
+    for col in ["declared_date", "last_buy_date", "registry_close_date", "payment_date"]:
+        if col in df.columns:
+            df[col] = pd.to_datetime(df[col])
+
+    return df
