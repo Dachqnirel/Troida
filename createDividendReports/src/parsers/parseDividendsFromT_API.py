@@ -25,4 +25,9 @@ async def getDividendsForInstruments(configFile: str):
         tasks.append(asyncio.create_task(coroutineParseDividends))
 
     instruments_dividends: list[tuple[DividendConfig, tAPI.pd.DataFrame]] = await asyncio.gather(*tasks)
+    # for dividend_record in instruments_dividends:
+    #     print('====================================================')
+    #     if dividend_record[1] is None:
+    #         print(dividend_record[0])
+    #         print(dividend_record[1])
     return instruments_dividends
