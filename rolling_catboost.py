@@ -69,17 +69,28 @@ def load_csv(path: str) -> pd.DataFrame:
 # ДАТАСЕТ: формируем (X, y) скользящими окнами - идём по истории с шагом step — на каждом шаге вызываем label_fn, который ДОЛЖЕН вернуть (X_t, y_t) для текущего t.
 # label_fn: Callable[[pd.DataFrame, int, int, int], Tuple[pd.Series, int]]
 #            принимает (df, start, lookback, horizon) и возвращает (X, y).
-def build_dataset(df: pd.DataFrame, lookback: int = 1000, horizon: int = 100, step: int = 50, label_fn: Callable[[pd.DataFrame, int, int, int], Tuple[pd.Series, int]] | None = None) -> Tuple[pd.DataFrame, pd.Series]:
+def build_dataset(df: pd.DataFrame, lookback: int = 1000, horizon: int = 100, step: int = 50, label_fn: Callable[[pd.DataFrame, int, int, int], Tuple[pd.Series, int]] | None = None) -> Tuple[pd.DataFrame, pd.Series, Optional[pd.Series]]:
     if label_fn is None:
         raise ValueError("Нужно передать label_fn, который формирует (X, y) для каждого окна.")
-    X_rows, y_rows = [], []
+    X_rows, y_rows, meta_rows = [], [], []
+    meta_present = False
     for t in range(lookback, len(df) - horizon, step):
-        X_t, y_t = label_fn(df, t, lookback, horizon)
+        out = label_fn(df, t, lookback, horizon)
+        if isinstance(out, tuple) and len(out) == 3:
+            X_t, y_t, meta = out
+            meta_present = True
+        else:
+            X_t, y_t = out
+            meta = None
         X_rows.append(X_t)
         y_rows.append(y_t)
+        meta_rows.append(meta)
     X_df = pd.DataFrame(X_rows).reset_index(drop=True)
     y_ser = pd.Series(y_rows, name="label")
-    return X_df, y_ser
+    meta_ser = None
+    if meta_present:
+        meta_ser = pd.Series(meta_rows, name="meta").reset_index(drop=True)
+    return X_df, y_ser, meta_ser
 
 
 # Сплит по времени  (всегда train = ранние примеры; valid = поздние)
@@ -196,3 +207,64 @@ def fit_catboost_multiclass(X_train: pd.DataFrame, y_train: pd.Series, X_val: Op
             fit_kwargs.pop("plot", None)
             return _train(fit_kwargs)
         raise
+
+
+def topk_accuracy_from_probas(probs: np.ndarray, y_true: np.ndarray, ks: Sequence[int] = (1, 3)) -> Dict[int, float]:
+    """Считаем top-k accuracy по матрице вероятностей (n_samples, n_classes)."""
+    probs = np.asarray(probs)
+    y_true = np.asarray(y_true).astype(int)
+    n = len(y_true)
+    if n == 0:
+        return {int(k): 0.0 for k in ks}
+    out: Dict[int, float] = {}
+    for k in ks:
+        k = int(k)
+        if k <= 0:
+            continue
+        k_eff = min(k, probs.shape[1])
+        hits = 0
+        for i in range(n):
+            idx = np.argpartition(probs[i], -k_eff)[-k_eff:]
+            if int(y_true[i]) in set(int(j) for j in idx):
+                hits += 1
+        out[k] = hits / n
+    return out
+
+
+def evaluate_validation_report(model: CatBoostClassifier, X_val: pd.DataFrame, y_val: pd.Series, meta_val: Optional[pd.Series], ks: Sequence[int] = (1, 3)) -> dict:
+    """Готовит отчёт по валидации: top-k accuracy, mean Sharpe(top-1) и expected Sharpe (prob-weighted)."""
+    probs = np.array(model.predict_proba(X_val))
+    y_true = y_val.values.astype(int)
+
+    report: dict = {"topk_accuracy": topk_accuracy_from_probas(probs, y_true, ks=ks)}
+
+    if meta_val is None:
+        return report
+    meta_val = meta_val.loc[X_val.index] if hasattr(meta_val, "loc") else meta_val
+
+    realized_sharpes = []
+    expected_sharpes = []
+    for i, meta in enumerate(list(meta_val)):
+        if not isinstance(meta, dict):
+            continue
+        scores = meta.get("scores")
+        if not scores:
+            continue
+        score_map = {int(item["class"]): float(item.get("sharpe", 0.0)) for item in scores}
+
+        top1_class = int(np.argmax(probs[i]))
+        realized_sharpes.append(score_map.get(top1_class, 0.0))
+
+        exp = 0.0
+        for cls, p in enumerate(probs[i]):
+            sharpe = score_map.get(int(cls))
+            if sharpe is None:
+                continue
+            exp += float(p) * sharpe
+        expected_sharpes.append(exp)
+
+    if realized_sharpes:
+        report["val_sharpe_mean"] = float(np.mean(realized_sharpes))
+    if expected_sharpes:
+        report["val_expected_sharpe"] = float(np.mean(expected_sharpes))
+    return report

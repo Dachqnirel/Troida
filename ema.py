@@ -13,7 +13,7 @@ from types import SimpleNamespace
 from typing import Callable, Tuple
 import numpy as np
 import pandas as pd
-from rolling_catboost import (load_csv, acf1_safe, build_dataset, time_split_by_ratio, prepare_eval_set_unseen, fit_catboost_multiclass, build_catboost_params, sharpe_and_sum)
+from rolling_catboost import (load_csv, acf1_safe, build_dataset, time_split_by_ratio, prepare_eval_set_unseen, fit_catboost_multiclass, build_catboost_params, sharpe_and_sum, evaluate_validation_report)
 
 
 def compute_ema(close: pd.Series, period: int) -> pd.Series:  # Экспоненциальная скользящая EMA(period)
@@ -130,9 +130,9 @@ def make_labeler_ema(grid, cost_bps: float) -> Callable:  # label_fn: лучша
             ema = compute_ema(fw_close, g["period"])
             strat = ema_strategy_returns(fw_close, ema, cost_bps=cost_bps)
             sh, sm = sharpe_and_sum(strat)
-            scores.append((i, sh, sm))
-        best_idx, _, _ = max(scores, key=lambda t: (t[1], t[2]))
-        return X, best_idx
+            scores.append({"class": i, "sharpe": sh, "sum": sm})
+        best_idx = max(scores, key=lambda t: (t["sharpe"], t["sum"]))["class"]
+        return X, best_idx, {"scores": scores}
 
     return label_on_forward
 
@@ -175,11 +175,13 @@ def run_pipeline(args, verbose: bool = True):  # Основной пайплай
         _log(i, g)
 
     label_fn = make_labeler_ema(grid, cost_bps)
-    X, y = build_dataset(df, lookback=lookback, horizon=horizon, step=step, label_fn=label_fn)
+    X, y, meta = build_dataset(df, lookback=lookback, horizon=horizon, step=step, label_fn=label_fn)
     if len(X) < 10:
         raise RuntimeError("Слишком мало примеров. Увеличьте историю или уменьшите lookback/horizon.")
 
     Xtr, ytr, Xte, yte = time_split_by_ratio(X, y, valid_ratio=0.2)
+    meta_tr = meta.iloc[:len(Xtr)] if meta is not None else None
+    meta_te = meta.iloc[len(Xtr):] if meta is not None else None
     eval_set = prepare_eval_set_unseen(Xte, yte, ytr)
     cat_params = build_catboost_params(overrides_str=overrides)
 
@@ -190,6 +192,17 @@ def run_pipeline(args, verbose: bool = True):  # Основной пайплай
         model, holdout_acc = fit_catboost_multiclass(Xtr, ytr, Xte_eval, yte_eval, params=cat_params, plot_fit=plot_flag)
 
     _log(f"Holdout accuracy: {holdout_acc}")
+    if eval_set is not None:
+        Xte_eval, yte_eval = eval_set
+        meta_eval = meta_te.loc[Xte_eval.index] if meta_te is not None else None
+        rep = evaluate_validation_report(model, Xte_eval, yte_eval, meta_eval, ks=(1, 3))
+        _log("Валидация (Sharpe/Top-K):")
+        if "val_sharpe_mean" in rep:
+            _log(f"  Mean Sharpe (top-1): {rep['val_sharpe_mean']:.3f}")
+        if "val_expected_sharpe" in rep:
+            _log(f"  Expected Sharpe: {rep['val_expected_sharpe']:.3f}")
+        for k, acc in sorted(rep.get("topk_accuracy", {}).items()):
+            _log(f"  Top-{k} accuracy: {acc:.3f}")
 
     lb_df = df.iloc[-(lookback + horizon):-horizon]
     X_last = make_features_ohlcv_ema(lb_df, lookback).to_frame().T

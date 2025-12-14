@@ -20,7 +20,7 @@
 import argparse
 import numpy as np
 import pandas as pd
-from rolling_catboost import (load_csv, acf1_safe, build_dataset, time_split_by_ratio, prepare_eval_set_unseen, fit_catboost_multiclass, build_catboost_params, sharpe_and_sum,)
+from rolling_catboost import (load_csv, acf1_safe, build_dataset, time_split_by_ratio, prepare_eval_set_unseen, fit_catboost_multiclass, build_catboost_params, sharpe_and_sum, evaluate_validation_report)
 
 
 # ИНДИКАТОР: RSI по Уайлдеру - считает RSI (0..100) экспоненциальным сглаживанием приращений.
@@ -161,9 +161,9 @@ def make_labeler_rsi(grid, cost_bps: float):
             rsi = compute_rsi(fw_close, g["period"]).fillna(50.0)
             strat = rsi_strategy_returns(fw_close, rsi, g["lower"], g["upper"], cost_bps)
             sh, sm = sharpe_and_sum(strat)
-            scores.append((i, sh, sm))
-        best_idx, _, _ = max(scores, key=lambda t: (t[1], t[2]))
-        return X, best_idx
+            scores.append({"class": i, "sharpe": sh, "sum": sm})
+        best_idx = max(scores, key=lambda t: (t["sharpe"], t["sum"]))["class"]
+        return X, best_idx, {"scores": scores}
     return label_on_forward
 
 
@@ -221,11 +221,13 @@ def run_pipeline(args, verbose: bool = True):
         _log(i, g)
 
     label_fn = make_labeler_rsi(grid, cost_bps)
-    X, y = build_dataset(df, lookback=lookback, horizon=horizon, step=step, label_fn=label_fn) # идёт по истории с шагом step, берёт окна длины lookback, формирует (X, y) через label_fn
+    X, y, meta = build_dataset(df, lookback=lookback, horizon=horizon, step=step, label_fn=label_fn) # идёт по истории с шагом step, берёт окна длины lookback, формирует (X, y) через label_fn
     if len(X) < 10:
         raise RuntimeError("Слишком мало образцов. Нужна более длинная история или уменьшить lookback/horizon.")
 
     Xtr, ytr, Xte, yte = time_split_by_ratio(X, y, valid_ratio=0.2)                            # разбивает получившийся датасет на обучающую и валидационную части по времени.
+    meta_tr = meta.iloc[:len(Xtr)] if meta is not None else None
+    meta_te = meta.iloc[len(Xtr):] if meta is not None else None
     eval_set = prepare_eval_set_unseen(Xte, yte, ytr)                                          # подчищает eval‑сэт от классов, которых не было в train
     cat_params = build_catboost_params(overrides_str=overrides)                                # берёт базовые параметры из default_catboost_params() (iterations, depth, loss_function, баланс классов и т.д.) и позволяет частично их переопределять строкой вида depth=5, iterations=2500, learning_rate=0.04
 
@@ -236,6 +238,17 @@ def run_pipeline(args, verbose: bool = True):
         model, holdout_acc = fit_catboost_multiclass(Xtr, ytr, Xte_eval, yte_eval, params=cat_params, plot_fit=plot_flag)
 
     _log(f"Holdout accuracy: {holdout_acc}")
+    if eval_set is not None:
+        Xte_eval, yte_eval = eval_set
+        meta_eval = meta_te.loc[Xte_eval.index] if meta_te is not None else None
+        rep = evaluate_validation_report(model, Xte_eval, yte_eval, meta_eval, ks=(1, 3))
+        _log("Валидация (Sharpe/Top-K):")
+        if "val_sharpe_mean" in rep:
+            _log(f"  Mean Sharpe (top-1): {rep['val_sharpe_mean']:.3f}")
+        if "val_expected_sharpe" in rep:
+            _log(f"  Expected Sharpe: {rep['val_expected_sharpe']:.3f}")
+        for k, acc in sorted(rep.get("topk_accuracy", {}).items()):
+            _log(f"  Top-{k} accuracy: {acc:.3f}")
 
     lb_df = df.iloc[-(lookback + horizon):-horizon]
     X_last = make_features_ohlcv_rsi(lb_df, lookback).to_frame().T
