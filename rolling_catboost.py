@@ -115,7 +115,6 @@ def default_catboost_params() -> dict:
         train_dir="catboost_info",
         verbose=100,
         # балансировка классов (если поддерживается версией CatBoost)
-        auto_class_weights="Balanced",
         # умеренная регуляризация/стохастичность
         l2_leaf_reg=20,
         random_strength=1.5,
@@ -123,6 +122,15 @@ def default_catboost_params() -> dict:
         bootstrap_type="Bayesian",
         bagging_temperature=1.0,
     )
+
+
+# Явно считаем веса классов как 1/freq, чтобы вручную балансировать выборку.
+def compute_class_weights(y: pd.Series) -> dict:
+    """Compute class weights as 1/freq for CatBoost."""
+    counts = y.value_counts()
+    total = len(y)
+    n_cls = len(counts)
+    return {cls: total / (n_cls * cnt) for cls, cnt in counts.items()}
 
 
 # Построить итоговые параметры: стандарт + произвольные переопределения (key=val). Пример: overrides_str='depth=5,iterations=2500,learning_rate=0.04' (маленький парсер key=val, чтобы без изменений кода можно было подстроить CatBoost из CLI/ноутбука.)
@@ -149,21 +157,13 @@ def build_catboost_params(overrides_str: str | None = None) -> dict:
 
 
 # Обучение CatBoostClassifier с учётом eval_set и ранней остановки. Возвращает (model, holdout_acc или None).
-def fit_catboost_multiclass(
-    X_train: pd.DataFrame,
-    y_train: pd.Series,
-    X_val: Optional[pd.DataFrame] = None,
-    y_val: Optional[pd.Series] = None,
-    params: Optional[dict] = None,
-    plot_fit: bool = False
-):
+def fit_catboost_multiclass(X_train: pd.DataFrame, y_train: pd.Series, X_val: Optional[pd.DataFrame] = None, y_val: Optional[pd.Series] = None, params: Optional[dict] = None, plot_fit: bool = False):
     params = (params or default_catboost_params()).copy()
     # Подстраховка: если параметр не поддерживается установленной версией CatBoost, убираем его.
-    try:
-        model = CatBoostClassifier(**params)
-    except TypeError:
-        params.pop("auto_class_weights", None)
-        model = CatBoostClassifier(**params)
+    params.pop("auto_class_weights", None)
+    if "class_weights" not in params:
+        params["class_weights"] = compute_class_weights(y_train)
+    model = CatBoostClassifier(**params)
 
     fit_kwargs = {}
     if plot_fit:
