@@ -13,7 +13,7 @@
 
 import numpy as np
 import pandas as pd
-from typing import Callable, Optional, Tuple
+from typing import Callable, Optional, Tuple, Dict, Sequence
 from catboost import CatBoostClassifier, CatBoostError
 
 
@@ -27,6 +27,16 @@ def acf1_safe(x: pd.Series) -> float:
     if den <= 0:
         return 0.0
     return float(((x0 - x.mean()) * (x1 - x.mean())).sum() / den)
+
+
+def sharpe_and_sum(ret: pd.Series) -> Tuple[float, float]:
+    """Shared strategy metric: (Sharpe, Sum)."""
+    r = pd.Series(ret).dropna()
+    if len(r) < 3:
+        return 0.0, float(r.sum())
+    mu = float(r.mean())
+    sd = float(r.std(ddof=0))
+    return mu / (sd + 1e-12), float(r.sum())
 
 
 # ЗАГРУЗКА CSV: аккуратно читаем OHLCV и приводим к единому виду - удаляет «Unnamed»/пустые колонки, находит колонку времени, сортирует по времени, приводит имена к нижнему регистру и возвращает DataFrame с хотя бы close (open/high/low/volume — опционально).

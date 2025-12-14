@@ -20,7 +20,7 @@
 import argparse
 import numpy as np
 import pandas as pd
-from rolling_catboost import (load_csv, acf1_safe, build_dataset, time_split_by_ratio, prepare_eval_set_unseen, fit_catboost_multiclass, build_catboost_params,)
+from rolling_catboost import (load_csv, acf1_safe, build_dataset, time_split_by_ratio, prepare_eval_set_unseen, fit_catboost_multiclass, build_catboost_params, sharpe_and_sum,)
 
 
 # ИНДИКАТОР: RSI по Уайлдеру - считает RSI (0..100) экспоненциальным сглаживанием приращений.
@@ -60,15 +60,6 @@ def rsi_strategy_returns(close: pd.Series, rsi: pd.Series, lower: float, upper: 
 
 
 # МЕТРИКИ: Sharpe и сумма доходностей - возвращает Sharpe≈mean/std (не годовой) и Sum (сумма доходностей), выбираем лучший набор параметров по (Sharpe, затем Sum).
-def sharpe_and_sum(ret: pd.Series):
-    r = ret.dropna()
-    if len(r) < 3:
-        return 0.0, float(r.sum())
-    mu = float(r.mean())
-    sd = float(r.std(ddof=0))
-    return mu / (sd + 1e-12), float(r.sum())
-
-
 # ПРИЗНАКИ X: из окна lookback по Close И по Open/High/Low/Volume - из последнего окна (по умолчанию 1000 баров) возвращает набор «режимных» фич: по Close: mean/std доходностей, ACF1, наклон тренда лог-цены, RSI(14) mean/std, по High/Low: средний относительный диапазон, «фитиль» свечей (верхний/нижний), по True Range: средний относительный TR (приближённый ATR/price), по Open-Close: доля бычьих свечей, средний относительный (Close-Open)/Open, по Volume: среднее/стд лог-объёма, отношение коротк./длинн. объёма, corr(|ret|, vol).
 def make_features_ohlcv_rsi(df_window: pd.DataFrame, lookback: int = 1000) -> pd.Series:
     w = df_window.iloc[-lookback:].copy()

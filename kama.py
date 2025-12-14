@@ -13,7 +13,7 @@ from types import SimpleNamespace
 from typing import Callable, Tuple
 import numpy as np
 import pandas as pd
-from rolling_catboost import (load_csv, acf1_safe, build_dataset, time_split_by_ratio, prepare_eval_set_unseen, fit_catboost_multiclass, build_catboost_params)
+from rolling_catboost import (load_csv, acf1_safe, build_dataset, time_split_by_ratio, prepare_eval_set_unseen, fit_catboost_multiclass, build_catboost_params, sharpe_and_sum)
 
 
 def compute_kama(close: pd.Series, er_period: int = 10, fast: int = 2, slow: int = 30) -> pd.Series:  # Расчёт KAMA
@@ -59,15 +59,6 @@ def kama_strategy_returns(close: pd.Series, kama: pd.Series, cost_bps: float = 5
     strat = np.insert(pos[:-1] * r[1:], 0, 0.0)
     strat -= trades * cost * np.abs(np.diff(np.insert(pos, 0, 0)))
     return pd.Series(strat, index=close.index)
-
-
-def sharpe_and_sum(ret: pd.Series) -> Tuple[float, float]:  # Метрики: Sharpe и сумма доходности
-    r = ret.dropna()
-    if len(r) < 3:
-        return 0.0, float(r.sum())
-    mu = float(r.mean())
-    sd = float(r.std(ddof=0))
-    return mu / (sd + 1e-12), float(r.sum())
 
 
 def make_features_ohlcv_kama(df_window: pd.DataFrame, lookback: int = 1000) -> pd.Series:  # Фичи окна (цена/объём/диапазоны)
@@ -313,4 +304,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-

@@ -21,7 +21,7 @@
 import argparse
 import numpy as np
 import pandas as pd
-from rolling_catboost import (load_csv, acf1_safe, build_dataset, time_split_by_ratio, prepare_eval_set_unseen, fit_catboost_multiclass, build_catboost_params,)
+from rolling_catboost import (load_csv, acf1_safe, build_dataset, time_split_by_ratio, prepare_eval_set_unseen, fit_catboost_multiclass, build_catboost_params, sharpe_and_sum,)
 
 
 # ИНДИКАТОР: MACD (Moving Average Convergence Divergence): 1) основная линия = EMA(fast) - EMA(slow). 2) сигнальная = EMA(основной линии, signal).
@@ -75,15 +75,6 @@ def macd_strategy_returns(close: pd.Series, macd_df: pd.DataFrame, cost_bps: flo
 
 
 # МЕТРИКИ: Sharpe и сумма доходностей - возвращает Sharpe≈mean/std (не годовой) и Sum (сумма доходностей), выбираем лучший набор параметров по (Sharpe, затем Sum).
-def sharpe_and_sum(ret: pd.Series):
-    r = ret.dropna()
-    if len(r) < 3:
-        return 0.0, float(r.sum())
-    mu = float(r.mean())
-    sd = float(r.std(ddof=0))
-    return mu / (sd + 1e-12), float(r.sum())
-
-
 # ПРИЗНАКИ X: из окна lookback по Close И по Open/High/Low/Volume - набор «режимных» фич как в RSI-версии,
 # но вместо статистик RSI добавим статистики по MACD/Signal (mean/std последних значений).
 def make_features_ohlcv_macd(df_window: pd.DataFrame, lookback: int = 1000) -> pd.Series:
