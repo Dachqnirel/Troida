@@ -29,8 +29,8 @@ def acf1_safe(x: pd.Series) -> float:
     return float(((x0 - x.mean()) * (x1 - x.mean())).sum() / den)
 
 
+# Подсчет метрик: Sharpe (оценивает доходность с поправкой на риск), Sum (общая доходность)
 def sharpe_and_sum(ret: pd.Series) -> Tuple[float, float]:
-    """Shared strategy metric: (Sharpe, Sum)."""
     r = pd.Series(ret).dropna()
     if len(r) < 3:
         return 0.0, float(r.sum())
@@ -135,7 +135,6 @@ def default_catboost_params() -> dict:
         allow_writing_files=True,    # разрешить создавать catboost_info с логами метрик (learn_error.tsv, time_left.log и т.п.) - требуется для построения catboost виджета (learn/test)
         train_dir="catboost_info",
         verbose=100,
-        # балансировка классов (если поддерживается версией CatBoost)
         # умеренная регуляризация/стохастичность
         l2_leaf_reg=20,
         random_strength=1.5,
@@ -147,7 +146,6 @@ def default_catboost_params() -> dict:
 
 # Явно считаем веса классов как 1/freq, чтобы вручную балансировать выборку.
 def compute_class_weights(y: pd.Series) -> dict:
-    """Compute class weights as 1/freq for CatBoost."""
     counts = y.value_counts()
     total = len(y)
     n_cls = len(counts)
@@ -209,8 +207,8 @@ def fit_catboost_multiclass(X_train: pd.DataFrame, y_train: pd.Series, X_val: Op
         raise
 
 
+# Считаем top-k accuracy по матрице вероятностей (n_samples, n_classes). Попал ли правильный вариант в тройку лучших по вероятности (модель берёт 3 самых вероятных класса, если истинный класс y находится среди этих 3 → успех)
 def topk_accuracy_from_probas(probs: np.ndarray, y_true: np.ndarray, ks: Sequence[int] = (1, 3)) -> Dict[int, float]:
-    """Считаем top-k accuracy по матрице вероятностей (n_samples, n_classes)."""
     probs = np.asarray(probs)
     y_true = np.asarray(y_true).astype(int)
     n = len(y_true)
@@ -230,9 +228,8 @@ def topk_accuracy_from_probas(probs: np.ndarray, y_true: np.ndarray, ks: Sequenc
         out[k] = hits / n
     return out
 
-
+# Готовит отчёт по валидации: top-k accuracy (точность классификации), mean Sharpe(top-1) (бизнес‑оценка "что будет, если всегда брать то, что модель выбрала как top-1") и expected Sharpe (prob-weighted) (более мягкая бизнес‑оценка, учитывающая всю вероятностную картину)
 def evaluate_validation_report(model: CatBoostClassifier, X_val: pd.DataFrame, y_val: pd.Series, meta_val: Optional[pd.Series], ks: Sequence[int] = (1, 3)) -> dict:
-    """Готовит отчёт по валидации: top-k accuracy, mean Sharpe(top-1) и expected Sharpe (prob-weighted)."""
     probs = np.array(model.predict_proba(X_val))
     y_true = y_val.values.astype(int)
 
@@ -247,10 +244,10 @@ def evaluate_validation_report(model: CatBoostClassifier, X_val: pd.DataFrame, y
     for i, meta in enumerate(list(meta_val)):
         if not isinstance(meta, dict):
             continue
-        scores = meta.get("scores")
+        scores = meta.get("scores")                                                          # берём sharpe именно для этого класса c_pred (то есть "какой Sharpe дал бы выбранный моделью класс на форвард‑окне")
         if not scores:
             continue
-        score_map = {int(item["class"]): float(item.get("sharpe", 0.0)) for item in scores}
+        score_map = {int(item["class"]): float(item.get("sharpe", 0.0)) for item in scores}  # усредняем эти Sharpe по всем валидационным примерам
 
         top1_class = int(np.argmax(probs[i]))
         realized_sharpes.append(score_map.get(top1_class, 0.0))
