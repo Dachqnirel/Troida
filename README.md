@@ -10,9 +10,7 @@
 5. Леоненко Роман 241-3211
 6. Молодкин Тимофей 241-363
 7. [Сарафанов Никита 231-336](https://github.com/niksanhts)
-
-### Задачи:
-[\*клик\*](https://docs.google.com/spreadsheets/d/1-eBKuSCimcO7rF1RXgTLscJefoh6DgPYIRA3L1fgVOA/edit?gid=0#gid=0)
+8. Гайворонский Семён 241-321
 
 
 ## Скрипт createReports.py
@@ -114,3 +112,98 @@ stock:
 Запустить скрипт при помощи вызова команды ```python .createReports.py -f <путь к .yaml конфигурации> -d <путь к директории, куда необходимо загрузить отчёты>```
 
 Для справки может служить команда ```python ./createReports.py --help```
+
+
+## Скрипт createDividendsReports.py
+
+### Основное назначение
+Скрипт **createDividendsReports.py** служит для построения отчётов по дивидендам инструментов, указанных в конфигурационном файле (пример файла конфигурации задан в директории **createDividendReports/configureDividends.yml**). Отчёты формируются на основе данных Тинькофф Инвестиций через официальное Python‑SDK и сохраняются в формате CSV и Parquet по аналогии с отчётами по свечам.
+
+Пример конфигурационного файла:
+
+```yaml
+fromDate: &from_date "21.10.2024 00:00:00"
+toDate: &to_date "21.10.2025 00:00:00" 
+
+stock:
+  Sberbank:
+    ticker: "SBER"
+    from_date: *from_date
+    to_date: *to_date
+
+  T-Technology:
+    ticker: "T"
+    from_date: *from_date
+    to_date: *to_date
+
+  VTB:
+    ticker: "VTBR"
+    from_date: *from_date
+    to_date: *to_date
+
+  Yandex:
+    ticker: "YDEX"
+    from_date: *from_date
+    to_date: *to_date
+
+  X5:
+    ticker: "X5"
+    from_date: *from_date
+    to_date: *to_date
+
+  VK:
+    ticker: "VKCO"
+    from_date: *from_date
+    to_date: *to_date
+
+  Lukoil:
+    ticker: "LKOH"
+    from_date: *from_date
+    to_date: *to_date
+
+  PIK:
+    ticker: "PIKK"
+    from_date: *from_date
+    to_date: *to_date
+
+  Norilsk Nikel:
+    ticker: "GMKN"
+    from_date: *from_date
+    to_date: *to_date
+
+  SeverStal:
+    ticker: "CHMF"
+    from_date: *from_date
+    to_date: *to_date
+```
+
+Для каждого инструмента по тикеру и диапазону дат запрашиваются события выплаты дивидендов через метод `GetDividends` API, данные приводятся к `pandas.DataFrame` и сохраняются в отчётные файлы для дальнейшего анализа.
+
+### Активация
+
+1. В файл **`.env`** поместить токен Тинькофф Инвестиций (`TINKOFF_TOKEN=...`), который SDK будет читать через `python-dotenv` и переменные окружения.
+2. Создать виртуальное окружение, используя, Python 3.12:
+   ```bash
+   python3.11 -m venv .venv
+   source .venv/bin/activate
+   ```
+3. Установить зависимости:
+   ```bash
+   pip install -r requirements.txt
+   ```
+
+### Запуск
+
+Запустить скрипт можно командой из директории проекта:
+
+```bash
+python ./createDividendsReports.py \
+  -f ./createDividendReports/configureDividends.yml \
+  -d ./createDividendReports/dividends_reports
+```
+
+Для справки по параметрам доступна команда:
+
+```bash
+python ./createDividendsReports.py --help
+```

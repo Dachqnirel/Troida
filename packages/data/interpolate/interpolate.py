@@ -14,7 +14,7 @@ def interpolate_missing_intervals(df: pd.DataFrame) -> pd.DataFrame:
     if not numeric_cols_present:
         return df_local
     for col in numeric_cols_present:
-        df_local[col] = pd.to_numeric(df_local[col], errors='coerce')
+        df_local[col] = pd.to_numeric(df_local[col], errors='coerce').round(3)
     df_local = df_local.set_index('datetime')
     df_local[numeric_cols_present] = df_local[numeric_cols_present].interpolate(
         method='time',

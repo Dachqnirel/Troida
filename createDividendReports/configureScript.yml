@@ -1,0 +1,74 @@
+fromDate: &from_date "08.10.2024 13:00:00" # UTC
+toDate: &to_date "09.10.2025 13:00:00" # UTC
+share: &share 2
+
+stock:
+  Sberbank:
+    ticker: "SBER"
+    interval: 2H
+    from_date: *from_date
+    to_date: *to_date
+    instrument_type: *share
+
+  T-Technology:
+    ticker: "T"
+    interval: 2H
+    from_date: *from_date
+    to_date: *to_date
+    instrument_type: *share
+
+  VTB:
+    ticker: "VTBR"
+    interval: 2H
+    from_date: *from_date
+    to_date: *to_date
+    instrument_type: *share
+
+  Yandex:
+    ticker: "YDEX"
+    interval: 2H
+    from_date: *from_date
+    to_date: *to_date
+    instrument_type: *share
+
+  X5:
+    ticker: "X5"
+    interval: 2H
+    from_date: *from_date
+    to_date: *to_date
+    instrument_type: *share
+
+  VK:
+    ticker: "VKCO"
+    interval: 2H
+    from_date: *from_date
+    to_date: *to_date
+    instrument_type: *share
+
+  Lukoil:
+    ticker: "LKOH"
+    interval: 2H
+    from_date: *from_date
+    to_date: *to_date
+    instrument_type: *share
+
+  PIK:
+    ticker: "PIKK"
+    interval: 2H
+    from_date: *from_date
+    to_date: *to_date
+    instrument_type: *share
+
+  Norilsk Nikel:
+    ticker: "GMKN"
+    interval: 2H
+    from_date: *from_date
+    to_date: *to_date
+    instrument_type: *share
+
+  SeverStal:
+    ticker: "CHMF"
+    interval: 2H
+    from_date: *from_date
+    to_date: *to_date
+    instrument_type: *share

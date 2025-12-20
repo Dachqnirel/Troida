@@ -95,8 +95,7 @@ class DataCompletenessValidator:
         }
     
     @staticmethod
-    def _generate_timeline_by_interval(
-        start_date: datetime, 
+    def _generate_timeline_by_interval(start_date: datetime, 
         end_date: datetime, 
         interval_seconds: int = 0,
         interval_minutes: int = 0,
@@ -104,7 +103,7 @@ class DataCompletenessValidator:
         interval_days: int = 0,
         interval_week: int = 0,
         interval_month: int = 0
-    ) -> List[datetime]:
+        ) -> List[datetime]:
         """
         Генерирует временную шкалу в соответствии с указанным интервалом
         
@@ -113,6 +112,7 @@ class DataCompletenessValidator:
         Для 4H: каждые 4 часа от начала до конца
         """
         timeline: list = []
+        timeline = []
         
         # Приводим start_date к ближайшему интервалу
         # Для 2H интервала: если данные начинаются в 06:00, то это уже правильное время
@@ -127,7 +127,6 @@ class DataCompletenessValidator:
             else:
                 appended_timedelta: relativedelta = relativedelta(months=interval_month)
             current_time += appended_timedelta
-            
         
         return timeline
     

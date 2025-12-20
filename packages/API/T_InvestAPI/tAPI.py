@@ -7,6 +7,7 @@ import glob
 import re
 
 from tinkoff.invest import Client, AsyncClient, CandleInterval, InstrumentIdType, RealExchange
+from tinkoff.invest.schemas import CandleSource, InstrumentType
 from tinkoff.invest.caching.instruments_cache.instruments_cache import InstrumentsCache
 from tinkoff.invest.caching.instruments_cache.settings import InstrumentsCacheSettings
 from tinkoff.invest.utils import now, quotation_to_decimal, candle_interval_to_timedelta, get_intervals
@@ -67,26 +68,17 @@ async def _initialize_instruments_cache() -> None:
     Инициализирует кэш инструментов один раз при старте.
     Создает быстрый кэш тикер -> instrument для максимальной производительности.
     """
-    # Пропатчиваем enum, чтобы клиент не падал на новых значениях
-    _patch_real_exchange_enum()
     
     async with AsyncClient(TINKOFF_TOKEN) as client:
-        # Получаем все типы инструментов (ETF оборачиваем в try из‑за бага RealExchange)
-        instrument_sources = []
-        shares_resp, bonds_resp, currencies_resp, futures_resp = await asyncio.gather(
+        # Получаем все типы инструментов
+        instrument_sources = await asyncio.gather(
             client.instruments.shares(),
             client.instruments.bonds(),
+            client.instruments.etfs(),
             client.instruments.currencies(),
-            client.instruments.futures()
-        )
-        instrument_sources.extend([shares_resp.instruments, bonds_resp.instruments, currencies_resp.instruments, futures_resp.instruments])
+            client.instruments.futures())
 
-        # ETF могут падать на старых версиях tinkoff-investments (ValueError: RealExchange)
-        try:
-            etf_resp = await client.instruments.etfs()
-            instrument_sources.append(etf_resp.instruments)
-        except Exception as exc:
-            logging.logger.warning(f"Пропускаем etfs из-за ошибки клиента: {exc}")
+        instrument_sources = [instrument_type.instruments for instrument_type in instrument_sources]
 
         # Фильтрация инструментов
         for instruments in instrument_sources:
@@ -257,6 +249,7 @@ async def download_candles(ticker: str, interval: str, from_date: datetime, to_d
                     from_=local_from,
                     to=local_to,
                     interval=interval,
+                    candle_source_type=CandleSource.CANDLE_SOURCE_INCLUDE_WEEKEND,
                 )
                 break
             
@@ -476,6 +469,82 @@ async def load_multiple_candles(instruments: List[Dict], max_concurrent: int=2) 
 #     df = await load_multiple_candles( instruments=[ {'ticker': "YDEX", 'interval': '5S', 'from_date': FROM_DATE, 'to_date': TO_DATE, 'format': 'parquet'}, {'ticker': "VTBR", 'interval': '5S', 'from_date': FROM_DATE, 'to_date': TO_DATE, 'format': 'parquet'}, {'ticker': "GMKN", 'interval': '5S', 'from_date': FROM_DATE, 'to_date': TO_DATE, 'format': 'parquet'}, ], max_concurrent=3, ) 
 #     await _close_client() 
     
-# if __name__ == "__main__": 
-#     import asyncio 
-#     asyncio.run(main())
+
+async def download_dividends(ticker: str, from_date: datetime, to_date: datetime) -> Optional[pd.DataFrame]:
+    """
+    Загружает события выплаты дивидендов по инструменту из Tinkoff Invest API.
+
+    Args:
+        ticker (str): Тикер инструмента
+        from_date (datetime): Начальная дата периода (UTC)
+        to_date (datetime): Конечная дата периода (UTC)
+
+    Returns:
+        Optional[pd.DataFrame]: DataFrame с дивидендами или None, если ничего нет
+    """
+    # Получаем FIGI по тикеру через уже существующий кэш
+    figi = await _get_figi_by_ticker(ticker)
+    logging.logger.info(f'Загрузка дивидендов для {ticker}, figi={figi}')
+
+    client = await _get_client()
+
+    # Tinkoff API допускает большой интервал, но для единообразия можем разбить по годам/месяцам
+    # Здесь для простоты используем один запрос на весь диапазон
+    all_divs_data = []
+
+    while True:
+        try:
+            response = await client.instruments.get_dividends(
+                figi=figi,
+                from_=from_date,
+                to=to_date,
+            )
+            break
+        except Exception as e:
+            if 'RESOURCE_EXHAUSTED' in str(e) or 'ratelimit' in str(e).lower():
+                wait_time = _extract_wait_time_from_error(e)
+                print(f"{ticker}: Ждем {wait_time} сек (dividends)...")
+                await asyncio.sleep(wait_time)
+            else:
+                logging.logger.error(f"Ошибка при получении дивидендов для {ticker}: {e}")
+                return None
+
+    # Преобразуем ответ в список кортежей
+    # Структура Dividends: declared_date, last_buy_date, registry_close_date,
+    # payment_date, dividend_net, close_price, yield_value, yield_real, currency и т.д.
+    for div in response.dividends:
+        all_divs_data.append(
+            (
+                div.declared_date,       # дата объявления
+                div.last_buy_date,       # последняя дата покупки для получения дивидендов
+                div.payment_date,        # дата выплаты
+                float(quotation_to_decimal(div.dividend_net)) if div.dividend_net is not None else 'None',
+                float(quotation_to_decimal(div.dividend_gross)) if hasattr(div, 'dividend_gross') and div.dividend_gross is not None else 'None',
+                float(quotation_to_decimal(div.close_price)) if div.close_price is not None else 'None',
+                float(quotation_to_decimal(div.yield_value)) if div.yield_value is not None else 'None',
+                div.regularity if div.regularity is not None else 'None'
+            )
+        )
+    if not all_divs_data:
+        return None
+
+    df = pd.DataFrame(
+        all_divs_data,
+        columns=[
+            "declared_date",
+            "last_buy_date",
+            "payment_date",
+            "dividend_net",
+            "dividend_gross",
+            "close_price",
+            "yield_value",
+            "regularity"
+        ],
+    )
+
+    # Приводим даты к datetime
+    for col in ["declared_date", "last_buy_date", "registry_close_date", "payment_date"]:
+        if col in df.columns:
+            df[col] = pd.to_datetime(df[col])
+
+    return df
