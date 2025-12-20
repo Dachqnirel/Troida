@@ -12,9 +12,6 @@
 7. [Сарафанов Никита 231-336](https://github.com/niksanhts)
 8. Гайворонский Семён 241-321
 
-### Задачи:
-[\*клик\*](https://docs.google.com/spreadsheets/d/1-eBKuSCimcO7rF1RXgTLscJefoh6DgPYIRA3L1fgVOA/edit?gid=0#gid=0)
-
 
 ## Скрипт createReports.py
 ### Основное назначение
