@@ -3,6 +3,8 @@ import numpy as np
 from datetime import datetime, timedelta
 from typing import Dict, List, Tuple, Optional
 from pandas import DataFrame
+from dateutil.relativedelta import relativedelta
+
 
 class DataCompletenessValidator:
     """
@@ -12,7 +14,12 @@ class DataCompletenessValidator:
     @staticmethod
     def validate_data_completeness_by_interval(
         df: DataFrame,
-        interval_minutes: int,
+        interval_secs: int ,
+        interval_minutes: int ,
+        interval_hours: int ,
+        interval_days: int ,
+        interval_week: int ,
+        interval_month: int ,
         from_date: Optional[str] = None,
         to_date: Optional[str] = None
     ) -> Dict[str, any]:
@@ -52,10 +59,12 @@ class DataCompletenessValidator:
         
         # Генерируем временные метки в соответствии с указанным интервалом
         # но начиная с фактической первой временной метки в данных
-        full_timeline = DataCompletenessValidator._generate_timeline_by_interval(
-            start_date, end_date, interval_minutes
-        )
         
+        full_timeline: List[datetime] = DataCompletenessValidator._generate_timeline_by_interval(
+            start_date, end_date, interval_secs, interval_minutes, interval_hours,
+            interval_days, interval_week, interval_month
+        )
+                
         # Находим фактические временные метки
         actual_timestamps = set(df['datetime'])
         
@@ -89,7 +98,12 @@ class DataCompletenessValidator:
     def _generate_timeline_by_interval(
         start_date: datetime, 
         end_date: datetime, 
-        interval_minutes: int
+        interval_seconds: int = 0,
+        interval_minutes: int = 0,
+        interval_hours: int = 0,
+        interval_days: int = 0,
+        interval_week: int = 0,
+        interval_month: int = 0
     ) -> List[datetime]:
         """
         Генерирует временную шкалу в соответствии с указанным интервалом
@@ -98,7 +112,7 @@ class DataCompletenessValidator:
         Для 2H: каждые 2 часа от начала до конца
         Для 4H: каждые 4 часа от начала до конца
         """
-        timeline = []
+        timeline: list = []
         
         # Приводим start_date к ближайшему интервалу
         # Для 2H интервала: если данные начинаются в 06:00, то это уже правильное время
@@ -107,7 +121,13 @@ class DataCompletenessValidator:
         current_time = start_date
         while current_time <= end_date:
             timeline.append(current_time)
-            current_time += timedelta(minutes=interval_minutes)
+            if interval_month == 0:
+                appended_timedelta: timedelta = timedelta(seconds=interval_seconds, days=interval_days,
+                        minutes=interval_minutes, weeks=interval_week, hours=interval_hours)
+            else:
+                appended_timedelta: relativedelta = relativedelta(months=interval_month)
+            current_time += appended_timedelta
+            
         
         return timeline
     

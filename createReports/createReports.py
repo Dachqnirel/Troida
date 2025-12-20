@@ -9,32 +9,7 @@ sys.path.append(str(Path(__file__).parent.parent))
 
 # основной код скрипта
 from src.parsers.arguments_cli import getOptionsFromCLI, argparse
-
-
-def interpolate_missing_intervals(df: pd.DataFrame) -> pd.DataFrame:
-    if df is None or df.empty or 'data_status' not in df.columns:
-        return df
-    df_local = df.copy()
-    df_local['datetime'] = pd.to_datetime(df_local['datetime'])
-    df_local = df_local.sort_values('datetime').reset_index(drop=True)
-    missing_mask = df_local['data_status'] == 'missing'
-    if not missing_mask.any():
-        return df_local
-    numeric_cols = ['open', 'high', 'low', 'close', 'volume']
-    numeric_cols_present = [col for col in numeric_cols if col in df_local.columns]
-    if not numeric_cols_present:
-        return df_local
-    for col in numeric_cols_present:
-        df_local[col] = pd.to_numeric(df_local[col], errors='coerce')
-    df_local = df_local.set_index('datetime')
-    df_local[numeric_cols_present] = df_local[numeric_cols_present].interpolate(
-        method='time',
-        limit_direction='both'
-    )
-    df_local.reset_index(inplace=True)
-    df_local.loc[missing_mask, 'data_status'] = 'interpolated'
-    return df_local
-
+from packages.data.interpolate import interpolate_missing_intervals
 
 async def main():
     arguments: argparse.Namespace = getOptionsFromCLI()
@@ -61,22 +36,52 @@ async def main():
         print(f"{'='*60}")
         
         # Определяем интервал в минутах из конфига
-        interval_minutes = 120  # по умолчанию 2H
+        interval_sec = interval_minutes = interval_hours = interval_days = interval_week = interval_month = 0
+        if stockConfig.interval == '5S':
+            interval_sec = 5
+        elif stockConfig.interval == '10S':
+            interval_sec = 10
+        elif stockConfig.interval == '30S':
+            interval_sec = 30
+        elif stockConfig.interval == '1M':
+            interval_minutes = 1
+        elif stockConfig.interval == '2M':
+            interval_minutes = 2
+        elif stockConfig.interval == '3M':
+            interval_minutes = 3
+        elif stockConfig.interval == '5M':
+            interval_minutes = 5
+        elif stockConfig.interval == '10M':
+            interval_minutes = 10
+        elif stockConfig.interval == '15M':
+            interval_minutes = 15
         if stockConfig.interval == '1H':
-            interval_minutes = 60
+            interval_hours = 1
         elif stockConfig.interval == '2H':
-            interval_minutes = 120
+            interval_hours = 2
         elif stockConfig.interval == '4H':
-            interval_minutes = 240
+            interval_hours = 4
+        elif stockConfig.interval == '1D':
+            interval_days = 1
+        elif stockConfig.interval == '1W':
+            interval_week = 1
+        elif stockConfig.interval == 'M':
+            interval_month = 1
+            
         
         # Проверяем полноту данных
         completeness_report = DataCompletenessValidator.validate_data_completeness_by_interval(
             df=dataframe,
+            interval_secs=interval_sec,
             interval_minutes=interval_minutes,
+            interval_hours=interval_hours,
+            interval_days=interval_days,
+            interval_week=interval_week,
+            interval_month=interval_month,
             from_date=stockConfig.from_date,
             to_date=stockConfig.to_date
         )
-        
+                
         # Выводим отчёт в терминал
         DataCompletenessValidator.print_terminal_report(completeness_report, stockConfig.ticker, stockConfig.interval)
 
@@ -89,7 +94,7 @@ async def main():
         # Сначала сохраняем непроверенный отчёт
         buildReports.one_shore_build_report(
             stockConfig,
-            marked_dataframe,
+            dataframe,
             arguments.destination,
             buildReports.ReportType.UNVERIFIED_REPORT
         )
@@ -99,7 +104,7 @@ async def main():
         # Выбор стратегии обработки аномалий
         verified_dataframe, anomalies_report = CheckAnomalyCandle.checkAnomalyInCandles(
             dataframe,
-            mode=arguments.anomaly_mode  # <-- добавляем этот аргумент
+            mode=arguments.anomaly_mode  # удалять аномалии или фикс аномалий
         )
 
         if arguments.anomaly_mode == "remove":
@@ -124,7 +129,12 @@ async def main():
         # Проверяем полноту данных после обработки аномалий
         verified_completeness_report = DataCompletenessValidator.validate_data_completeness_by_interval(
             df=verified_dataframe,
+            interval_secs=interval_sec,
             interval_minutes=interval_minutes,
+            interval_hours=interval_hours,
+            interval_days=interval_days,
+            interval_week=interval_week,
+            interval_month=interval_month,
             from_date=stockConfig.from_date,
             to_date=stockConfig.to_date
         )

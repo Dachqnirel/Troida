@@ -28,6 +28,9 @@ _client_lock = asyncio.Lock()
 
 # Соответствие строковых интервалов enum
 _INTERVAL_MAPPING = {
+    CandleInterval.CANDLE_INTERVAL_5_SEC: "5S",
+    CandleInterval.CANDLE_INTERVAL_10_SEC: '10S',
+    CandleInterval.CANDLE_INTERVAL_30_SEC: '30S',
     CandleInterval.CANDLE_INTERVAL_1_MIN: "1M",
     CandleInterval.CANDLE_INTERVAL_2_MIN: "2M",
     CandleInterval.CANDLE_INTERVAL_3_MIN: "3M",
@@ -38,7 +41,7 @@ _INTERVAL_MAPPING = {
     CandleInterval.CANDLE_INTERVAL_2_HOUR: "2H",
     CandleInterval.CANDLE_INTERVAL_4_HOUR: "4H",
     CandleInterval.CANDLE_INTERVAL_DAY: "1D",
-    CandleInterval.CANDLE_INTERVAL_WEEK: "W",
+    CandleInterval.CANDLE_INTERVAL_WEEK: "1W",
     CandleInterval.CANDLE_INTERVAL_MONTH: "M"
 }
 

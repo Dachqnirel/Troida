@@ -73,7 +73,7 @@ stock:
 
   Norilsk Nikel:
     ticker: "GMKN"
-    interval: 2H
+    interval: M
     from_date: *from_date
     to_date: *to_date
     instrument_type: *share
