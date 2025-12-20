@@ -10,6 +10,9 @@
 5. Леоненко Роман 241-3211
 6. Молодкин Тимофей 241-363
 7. [Сарафанов Никита 231-336](https://github.com/niksanhts)
+8. Гайворонский Семён 241-321
+9. Ортанов Астемир 241-331
+10. Саливонов Никита 221-361
 
 ### Задачи:
 [\*клик\*](https://docs.google.com/spreadsheets/d/1-eBKuSCimcO7rF1RXgTLscJefoh6DgPYIRA3L1fgVOA/edit?gid=0#gid=0)
