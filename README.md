@@ -13,7 +13,201 @@
 8. Гайворонский Семён 241-321
 
 
-## Скрипт createReports.py
+## Скрипт bybit-parser (интерфейс с Bybit API). Для использования требуется VPN.
+
+### Основное назначение
+CLI-инструмент bybit-parser предназначен для парсинга свечей криптовалютных активов из **Bybit**.
+
+### Требования
+
+- Python 3.10+
+- Зависимости:
+
+```bash
+pip install -r requirements.txt
+```
+
+`requirements.txt`:
+```
+pybit
+python-dotenv
+```
+
+---
+
+### Конфигурация (.env)
+
+Перед запуском создайте файл `.env` в директории скрипта:
+
+```env
+LOG_PATH=logs              # Директория для лог-файлов
+LOG_FILE_SIZE=5242880      # Максимальный размер одного лог-файла в байтах (здесь 5 МБ)
+BACKUP_FILES_COUNT=5       # Количество хранимых резервных копий лога
+```
+
+Лог-файл создаётся автоматически по пути `<LOG_PATH>/byparser.log` с ротацией.
+
+---
+
+### Использование
+
+```
+python byparser.py -s ПАРА -c ТИП -i ИНТЕРВАЛ [опции]
+```
+
+### Обязательные аргументы
+
+| Аргумент | Описание |
+|---|---|
+| `-s`, `--symbol` | Торговая пара, например `BTCUSDT` |
+| `-c`, `--category` | Тип рынка: `spot`, `linear`, `inverse` |
+| `-i`, `--interval` | Таймфрейм свечи (см. таблицу ниже) |
+
+### Опциональные аргументы
+
+| Аргумент | По умолчанию | Описание |
+|---|---|---|
+| `--start` | — | Начало диапазона: `YYYY-MM-DD` или `YYYY-MM-DD HH:MM:SS` (UTC) |
+| `--end` | — | Конец диапазона: `YYYY-MM-DD` или `YYYY-MM-DD HH:MM:SS` (UTC) |
+| `-l`, `--limit` | `200` | Кол-во свечей при запросе без диапазона (1–200). Игнорируется при `--start`/`--end` |
+| `-o`, `--output` | `<ПАРА>_<ТИП>_<ИНТЕРВАЛ>.csv` | Путь для сохранения CSV |
+
+> При указании `--start` и/или `--end` скрипт автоматически выполняет пагинацию и собирает **все** свечи в заданном диапазоне.
+
+---
+
+## Таймфреймы (-i / --interval)
+
+| Значение | Период |
+|---|---|
+| `1` | 1 минута |
+| `3` | 3 минуты |
+| `5` | 5 минут |
+| `15` | 15 минут |
+| `30` | 30 минут |
+| `60` | 1 час |
+| `120` | 2 часа |
+| `240` | 4 часа |
+| `360` | 6 часов |
+| `720` | 12 часов |
+| `D` | 1 день |
+| `W` | 1 неделя |
+| `M` | 1 месяц |
+
+---
+
+## Примеры запуска
+
+```bash
+
+# Последние 200 часовых свечей BTC (спот)
+python byparser.py -s BTCUSDT -c spot -i 60 -o btc.csv
+
+# Последние 50 дневных свечей ETH (спот)
+python byparser.py -s ETHUSDT -c spot -i D -l 50 -o eth_daily.csv
+
+# Все 15-минутные свечи ETH (перп. фьючерс) за январь 2024
+python byparser.py -s ETHUSDT -c linear -i 15 --start 2024-01-01 --end 2024-02-01 -o eth_jan.csv
+
+# 4-часовые свечи SOL (инверсный контракт) с конкретным временем
+python byparser.py -s SOLUSDT -c inverse -i 240 --start "2024-06-01 00:00:00" --end "2024-06-30 23:59:59" -o sol.csv
+```
+
+---
+
+## Формат CSV
+
+Файл содержит следующие столбцы:
+
+| Столбец | Тип | Описание |
+|---|---|---|
+| `timestamp` | int | Unix-время в миллисекундах |
+| `datetime` | str | Дата и время (`YYYY-MM-DD HH:MM:SS`) |
+| `open` | float | Цена открытия |
+| `high` | float | Максимальная цена |
+| `low` | float | Минимальная цена |
+| `close` | float | Цена закрытия |
+| `volume` | float | Объём в базовой валюте |
+| `turnover` | float | Оборот в котируемой валюте |
+
+---
+
+## Очистка аномалий
+
+Перед сохранением скрипт автоматически проверяет и устраняет следующие проблемы:
+
+| Тип | Действие |
+|---|---|
+| **Нарушение OHLC** — `high` < `open`/`close` или `low` > `open`/`close` | Исправляется корректировкой `high`/`low` |
+| **Полная инверсия** — `high` < `low` | Свеча удаляется |
+| **Нулевой / отрицательный объём** | Свеча удаляется |
+| **Ценовой выброс** — отклонение `close` более чем на 3σ от скользящего среднего (окно 20 свечей) | Свеча удаляется |
+| **Дубликат** — одинаковый `timestamp` | Дубль удаляется |
+| **Пропуск** — разрыв > 2 × ожидаемый интервал | Фиксируется в логе (не восполняется) |
+
+Все найденные аномалии записываются в лог с уровнем `WARNING`.
+
+---
+
+## Поддерживаемые торговые пары
+
+Скрипт поддерживает любую пару, доступную на Bybit. Ниже приведены наиболее популярные.
+
+### Спот (--category spot)
+
+| Пара | Описание |
+|---|---|
+| `BTCUSDT` | Bitcoin / Tether |
+| `ETHUSDT` | Ethereum / Tether |
+| `SOLUSDT` | Solana / Tether |
+| `BNBUSDT` | BNB / Tether |
+| `XRPUSDT` | XRP / Tether |
+| `DOGEUSDT` | Dogecoin / Tether |
+| `ADAUSDT` | Cardano / Tether |
+| `AVAXUSDT` | Avalanche / Tether |
+| `DOTUSDT` | Polkadot / Tether |
+| `MATICUSDT` | Polygon / Tether |
+| `LTCUSDT` | Litecoin / Tether |
+| `LINKUSDT` | Chainlink / Tether |
+| `UNIUSDT` | Uniswap / Tether |
+| `ATOMUSDT` | Cosmos / Tether |
+| `NEARUSDT` | NEAR Protocol / Tether |
+
+### Бессрочные фьючерсы USDT (--category linear)
+
+| Пара | Описание |
+|---|---|
+| `BTCUSDT` | Bitcoin Perpetual |
+| `ETHUSDT` | Ethereum Perpetual |
+| `SOLUSDT` | Solana Perpetual |
+| `BNBUSDT` | BNB Perpetual |
+| `XRPUSDT` | XRP Perpetual |
+| `DOGEUSDT` | Dogecoin Perpetual |
+| `ADAUSDT` | Cardano Perpetual |
+| `AVAXUSDT` | Avalanche Perpetual |
+| `DOTUSDT` | Polkadot Perpetual |
+| `LINKUSDT` | Chainlink Perpetual |
+| `LTCUSDT` | Litecoin Perpetual |
+| `MATICUSDT` | Polygon Perpetual |
+| `UNIUSDT` | Uniswap Perpetual |
+| `ATOMUSDT` | Cosmos Perpetual |
+| `NEARUSDT` | NEAR Protocol Perpetual |
+
+### Инверсные контракты (--category inverse)
+
+| Пара | Описание |
+|---|---|
+| `BTCUSD` | Bitcoin / USD (расчёт в BTC) |
+| `ETHUSD` | Ethereum / USD (расчёт в ETH) |
+| `SOLUSD` | Solana / USD (расчёт в SOL) |
+| `XRPUSD` | XRP / USD (расчёт в XRP) |
+| `DOTUSD` | Polkadot / USD (расчёт в DOT) |
+
+> Полный список пар доступен на [bybit.com](https://www.bybit.com). Название пары передаётся в аргумент `-s` в верхнем регистре.
+
+
+
+## Скрипт createReports.py (интерфейс с Tinkoff API)
 ### Основное назначение
 Скрипт **createReports.py** служит для построения отчётов по акциям и соответствующим параметрам (пример файла конфигурации задан в директории **createReports/configureScript.yml**) или в источнике ниже.
 ```yaml
@@ -207,3 +401,166 @@ python ./createDividendsReports.py \
 ```bash
 python ./createDividendsReports.py --help
 ```
+
+# byparser — Bybit Candle Parser
+
+Скрипт загружает свечи с биржи Bybit, очищает их от аномалий и сохраняет результат в CSV-файл. Предназначен для запуска по расписанию (cron).
+
+---
+
+## Требования
+
+- Python 3.10+
+- Зависимости:
+
+```bash
+pip install -r requirements.txt
+```
+
+`requirements.txt`:
+```
+pybit
+python-dotenv
+```
+
+---
+
+## Конфигурация (.env)
+
+Перед запуском создайте файл `.env` в директории скрипта:
+
+```env
+LOG_PATH=logs              # Директория для лог-файлов
+LOG_FILE_SIZE=5242880      # Максимальный размер одного лог-файла в байтах (здесь 5 МБ)
+BACKUP_FILES_COUNT=5       # Количество хранимых резервных копий лога
+```
+
+Лог-файл создаётся автоматически по пути `<LOG_PATH>/byparser.log` с ротацией.
+
+---
+
+## Использование
+
+```
+python byparser.py -s ПАРА -c ТИП -i ИНТЕРВАЛ [опции]
+```
+
+### Обязательные аргументы
+
+| Аргумент | Описание |
+|---|---|
+| `-s`, `--symbol` | Торговая пара, например `BTCUSDT` |
+| `-c`, `--category` | Тип рынка: `spot`, `linear`, `inverse` |
+| `-i`, `--interval` | Таймфрейм свечи (см. таблицу ниже) |
+
+### Опциональные аргументы
+
+| Аргумент | По умолчанию | Описание |
+|---|---|---|
+| `--start` | — | Начало диапазона: `YYYY-MM-DD` или `YYYY-MM-DD HH:MM:SS` (UTC) |
+| `--end` | — | Конец диапазона: `YYYY-MM-DD` или `YYYY-MM-DD HH:MM:SS` (UTC) |
+| `-l`, `--limit` | `200` | Кол-во свечей при запросе без диапазона (1–200). Игнорируется при `--start`/`--end` |
+| `-o`, `--output` | `<ПАРА>_<ТИП>_<ИНТЕРВАЛ>.csv` | Путь для сохранения CSV |
+
+> При указании `--start` и/или `--end` скрипт автоматически выполняет пагинацию и собирает **все** свечи в заданном диапазоне.
+
+---
+
+## Таймфреймы (-i / --interval)
+
+| Значение | Период |
+|---|---|
+| `1` | 1 минута |
+| `3` | 3 минуты |
+| `5` | 5 минут |
+| `15` | 15 минут |
+| `30` | 30 минут |
+| `60` | 1 час |
+| `120` | 2 часа |
+| `240` | 4 часа |
+| `360` | 6 часов |
+| `720` | 12 часов |
+| `D` | 1 день |
+| `W` | 1 неделя |
+| `M` | 1 месяц |
+
+---
+
+## Примеры запуска
+
+```bash
+
+# Последние 200 часовых свечей BTC (спот)
+python byparser.py -s BTCUSDT -c spot -i 60 -o btc.csv
+
+# Последние 50 дневных свечей ETH (спот)
+python byparser.py -s ETHUSDT -c spot -i D -l 50 -o eth_daily.csv
+
+# Все 15-минутные свечи ETH (перп. фьючерс) за январь 2024
+python byparser.py -s ETHUSDT -c linear -i 15 --start 2024-01-01 --end 2024-02-01 -o eth_jan.csv
+
+# 4-часовые свечи SOL (инверсный контракт) с конкретным временем
+python byparser.py -s SOLUSDT -c inverse -i 240 --start "2024-06-01 00:00:00" --end "2024-06-30 23:59:59" -o sol.csv
+```
+
+---
+
+## Формат CSV
+
+Файл содержит следующие столбцы:
+
+| Столбец | Тип | Описание |
+|---|---|---|
+| `timestamp` | int | Unix-время в миллисекундах |
+| `datetime` | str | Дата и время (`YYYY-MM-DD HH:MM:SS`) |
+| `open` | float | Цена открытия |
+| `high` | float | Максимальная цена |
+| `low` | float | Минимальная цена |
+| `close` | float | Цена закрытия |
+| `volume` | float | Объём в базовой валюте |
+| `turnover` | float | Оборот в котируемой валюте |
+
+---
+
+## Очистка аномалий
+
+Перед сохранением скрипт автоматически проверяет и устраняет следующие проблемы:
+
+| Тип | Действие |
+|---|---|
+| **Нарушение OHLC** — `high` < `open`/`close` или `low` > `open`/`close` | Исправляется корректировкой `high`/`low` |
+| **Полная инверсия** — `high` < `low` | Свеча удаляется |
+| **Нулевой / отрицательный объём** | Свеча удаляется |
+| **Ценовой выброс** — отклонение `close` более чем на 3σ от скользящего среднего (окно 20 свечей) | Свеча удаляется |
+| **Дубликат** — одинаковый `timestamp` | Дубль удаляется |
+| **Пропуск** — разрыв > 2 × ожидаемый интервал | Фиксируется в логе (не восполняется) |
+
+Все найденные аномалии записываются в лог с уровнем `WARNING`.
+
+---
+
+## Поддерживаемые торговые пары
+
+Скрипт поддерживает любую пару, доступную на Bybit. Ниже приведены наиболее популярные.
+
+### Спот (--category spot)
+
+| Пара | Описание |
+|---|---|
+| `BTCUSDT` | Bitcoin / Tether |
+| `ETHUSDT` | Ethereum / Tether |
+| `SOLUSDT` | Solana / Tether |
+| `BNBUSDT` | BNB / Tether |
+| `XRPUSDT` | XRP / Tether |
+| `DOGEUSDT` | Dogecoin / Tether |
+| `ADAUSDT` | Cardano / Tether |
+| `AVAXUSDT` | Avalanche / Tether |
+| `DOTUSDT` | Polkadot / Tether |
+| `MATICUSDT` | Polygon / Tether |
+| `LTCUSDT` | Litecoin / Tether |
+| `LINKUSDT` | Chainlink / Tether |
+| `UNIUSDT` | Uniswap / Tether |
+| `ATOMUSDT` | Cosmos / Tether |
+| `NEARUSDT` | NEAR Protocol / Tether |
+
+> Полный список пар доступен на [bybit.com](https://www.bybit.com). Название пары передаётся в аргумент `-s` в верхнем регистре.
