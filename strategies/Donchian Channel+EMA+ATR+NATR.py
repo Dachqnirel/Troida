@@ -1,6 +1,3 @@
-#!/usr/bin/env python3
-# -*- coding: utf-8 -*-
-
 """
 Donchian Breakout стратегия, адаптированная под акции MOEX.
 
@@ -32,8 +29,6 @@ import requests
 MOSCOW_TZ = ZoneInfo("Europe/Moscow")
 
 
-# ----------------------------- Конфигурация ----------------------------- #
-
 @dataclass(slots=True)
 class BacktestConfig:
     symbol: str = "GAZP"
@@ -41,8 +36,8 @@ class BacktestConfig:
     since: str | int | None = "2025-01-01"
     till: str | None = None
     initial_cash: float = 100_000.0
-    commission: float = 0.0005      # 0.05%
-    slippage: float = 0.0003        # 0.03%
+    commission: float = 0.0005      
+    slippage: float = 0.0003   
 
     moex_engine: str = "stock"
     moex_market: str = "shares"
@@ -69,8 +64,6 @@ class BacktestConfig:
     enable_strategy_logs: bool = False
 
 
-# ----------------------------- Индикаторы ----------------------------- #
-
 class NATR(bt.Indicator):
     """Normalized ATR = ATR / Close * 100."""
 
@@ -81,8 +74,6 @@ class NATR(bt.Indicator):
         atr = bt.ind.ATR(self.data, period=self.p.period)
         self.lines.natr = (atr / self.data.close) * 100.0
 
-
-# ----------------------------- Стратегия ----------------------------- #
 
 class DonchianBreakoutStrategy(bt.Strategy):
     params = dict(
@@ -106,7 +97,6 @@ class DonchianBreakoutStrategy(bt.Strategy):
         self.atr = bt.ind.ATR(self.data, period=self.p.atr_period)
         self.natr = NATR(self.data, period=self.p.atr_period)
 
-        # Используем только завершенные бары в расчете каналов (без lookahead).
         self.donchian_entry_high = bt.ind.Highest(
             self.data.high(-1),
             period=self.p.donchian_entry_period,
@@ -206,8 +196,6 @@ class DonchianBreakoutStrategy(bt.Strategy):
         if self.has_pending_orders():
             return
 
-        # Блок управления открытой long-позицией вынесен отдельно,
-        # чтобы потом было проще добавить short-логику симметрично.
         if self.position.size > 0:
             if self.data.close[0] < self.donchian_exit_low[0]:
                 self.log(
@@ -259,8 +247,6 @@ class DonchianBreakoutStrategy(bt.Strategy):
             )
             self.entry_order, self.stop_order, self.take_order = bracket
 
-
-# ----------------------------- Загрузка MOEX данных ----------------------------- #
 
 def parse_date(value: str | int | None) -> date:
     if value is None:
@@ -425,8 +411,6 @@ def fetch_moex_candles_paginated(
     return out
 
 
-# ----------------------------- Метрики ----------------------------- #
-
 def safe_get(dct: dict[str, Any], path: list[str], default: Any = None) -> Any:
     cur: Any = dct
     for key in path:
@@ -486,8 +470,6 @@ def collect_metrics(
     }
 
 
-# ----------------------------- Вывод ----------------------------- #
-
 def print_metrics(metrics: dict[str, Any], cfg: BacktestConfig) -> None:
     print("\n===== РЕЗУЛЬТАТЫ BACKTEST =====")
     print(f"Источник данных:         MOEX ({cfg.moex_engine}/{cfg.moex_market}/{cfg.moex_board})")
@@ -509,8 +491,6 @@ def print_metrics(metrics: dict[str, Any], cfg: BacktestConfig) -> None:
     print(f"Buy & Hold доходность:  {metrics['buy_hold_return_pct']:.2f}%")
     print("================================\n")
 
-
-# ----------------------------- Запуск ----------------------------- #
 
 def run_backtest(cfg: BacktestConfig) -> dict[str, Any]:
     df = fetch_moex_candles_paginated(
@@ -564,9 +544,6 @@ def run_backtest(cfg: BacktestConfig) -> dict[str, Any]:
     strat = results[0]
 
     return collect_metrics(strat, cfg.initial_cash, df)
-
-
-# ----------------------------- CLI ----------------------------- #
 
 def build_arg_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(description="Donchian Breakout стратегия на данных MOEX")
@@ -624,8 +601,6 @@ def apply_preset(cfg: BacktestConfig, preset: str | None) -> BacktestConfig:
     preset_norm = preset.strip().lower()
 
     if preset_norm == "gazp_cagr14_v1":
-        # Подобранный пресет для GAZP (MOEX, 1h, since=2025-01-01):
-        # CAGR ~14.9%, total return ~18.2%, maxDD ~6.3% (окно 2025-01-01..2026-03-18).
         cfg.symbol = "GAZP"
         cfg.timeframe = "1h"
         cfg.since = "2025-01-01"
@@ -654,8 +629,6 @@ def apply_preset(cfg: BacktestConfig, preset: str | None) -> BacktestConfig:
         return cfg
 
     if preset_norm == "gazp_reduced_cost_cagr17_v1":
-        # Профиль с пониженными издержками (брокер + исполнение):
-        # CAGR ~17.6%, total return ~21.6%, maxDD ~9.0% на том же окне.
         cfg.symbol = "GAZP"
         cfg.timeframe = "1h"
         cfg.since = "2025-01-01"
