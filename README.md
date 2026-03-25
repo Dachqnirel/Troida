@@ -1,566 +1,274 @@
-# Moscow Polytech University
-![some text](https://sun9-44.userapi.com/s/v1/if2/-56bVS1t1sjIx3cO_p5eevk2150OLx5k8yZbU8tn5t8ppiQKF-1Kex6QJK1bVosHkDyHNjng75aNoaoT6QK94wT8.jpg?quality=95&as=32x7,48x11,72x17,108x25,160x38,240x56,360x84,480x113,540x127,640x150,720x169,1080x253,1280x300,1440x338,2003x470&from=bu&cs=2003x0)
-## Подкоманда "Данные и бэктест"
+# Bybit Parser
 
-### Состав команды:
-1. Макарова Софья 241-363
-2. Крупенин Владимир 231-3210
-3. Ортанов Астемир 241-331
-4. Саливонов Никита 221-361
-5. Леоненко Роман 241-3211
-6. Молодкин Тимофей 241-363
-7. [Сарафанов Никита 231-336](https://github.com/niksanhts)
-8. Гайворонский Семён 241-321
+Парсер свечей с биржи Bybit. Поддерживает два режима работы: **HTTP-сервер** (GET-запросы, JSON-ответы) и **CLI** (экспорт в CSV).
 
+---
 
-## Скрипт bybit-parser (интерфейс с Bybit API). Для использования требуется VPN.
-
-### Основное назначение
-CLI-инструмент bybit-parser предназначен для парсинга свечей криптовалютных активов из **Bybit**.
-
-### Требования
-
-- Python 3.10+
-- Зависимости:
+## Установка
 
 ```bash
 pip install -r requirements.txt
 ```
 
-`requirements.txt`:
+**Зависимости:** `pybit`, `python-dotenv`, `fastapi`, `uvicorn`
+
+---
+
+## Режим HTTP-сервера
+
+### Запуск
+
+```bash
+# Локально (127.0.0.1:8000)
+python byparser.py --serve
+
+# Свой адрес и порт
+python byparser.py --serve --host 0.0.0.0 --port 9000
 ```
-pybit
-python-dotenv
+
+Интерактивная документация (Swagger UI) доступна по адресу:
+```
+http://127.0.0.1:8000/docs
 ```
 
 ---
 
-### Конфигурация (.env)
+### GET /candles
 
-Перед запуском создайте файл `.env` в директории скрипта:
+Возвращает свечи в формате JSON.
 
-```env
-LOG_PATH=logs              # Директория для лог-файлов
-LOG_FILE_SIZE=5242880      # Максимальный размер одного лог-файла в байтах (здесь 5 МБ)
-BACKUP_FILES_COUNT=5       # Количество хранимых резервных копий лога
+#### Параметры запроса
+
+| Параметр   | Тип    | Обязательный | По умолчанию | Описание |
+|------------|--------|:------------:|:------------:|----------|
+| `symbol`   | string | ✅           | —            | Торговая пара: `BTCUSDT`, `ETHUSDT` и т.д. |
+| `interval` | string | ✅           | —            | Таймфрейм (см. таблицу ниже) |
+| `category` | string | ❌           | `spot`       | Тип рынка: `spot`, `linear`, `inverse` |
+| `limit`    | int    | ❌           | `200`        | Количество свечей без диапазона (1–200). Игнорируется при `start`/`end` |
+| `start`    | string | ❌           | —            | Начало диапазона: `YYYY-MM-DD` или `YYYY-MM-DD HH:MM:SS` (UTC) |
+| `end`      | string | ❌           | —            | Конец диапазона: `YYYY-MM-DD` или `YYYY-MM-DD HH:MM:SS` (UTC) |
+
+> При указании `start` и/или `end` выполняется автоматическая пагинация — возвращаются все свечи за период (без ограничения в 200).
+
+#### Допустимые значения interval
+
+| Значение | Период свечи   |
+|----------|---------------|
+| `1`      | 1 минута      |
+| `3`      | 3 минуты      |
+| `5`      | 5 минут       |
+| `15`     | 15 минут      |
+| `30`     | 30 минут      |
+| `60`     | 1 час         |
+| `120`    | 2 часа        |
+| `240`    | 4 часа        |
+| `360`    | 6 часов       |
+| `720`    | 12 часов      |
+| `D`      | 1 день        |
+| `W`      | 1 неделя      |
+| `M`      | 1 месяц       |
+
+#### Формат ответа
+
+```json
+{
+  "count": 100,
+  "candles": [
+    {
+      "timestamp": 1704067200000,
+      "datetime":  "2024-01-01 00:00:00",
+      "open":      42000.0,
+      "high":      42500.0,
+      "low":       41800.0,
+      "close":     42300.0,
+      "volume":    1234.56,
+      "turnover":  52000000.0
+    }
+  ]
+}
 ```
 
-Лог-файл создаётся автоматически по пути `<LOG_PATH>/byparser.log` с ротацией.
+Свечи отсортированы в хронологическом порядке (от старых к новым).
+
+#### Примеры запросов
+
+**Последние 100 часовых свечей BTCUSDT (спот):**
+```
+GET /candles?symbol=BTCUSDT&interval=60&category=spot&limit=100
+```
+
+**15-минутные свечи ETHUSDT (фьючерс) за март 2024:**
+```
+GET /candles?symbol=ETHUSDT&interval=15&category=linear&start=2024-03-01&end=2024-04-01
+```
+
+**Дневные свечи SOLUSDT за конкретный день:**
+```
+GET /candles?symbol=SOLUSDT&interval=D&category=spot&start=2024-01-01&end=2024-01-02
+```
+
+**5-минутные свечи с точным временем:**
+```
+GET /candles?symbol=BTCUSDT&interval=5&category=linear&start=2024-03-01 10:00:00&end=2024-03-01 12:00:00
+```
+
+#### Примеры через curl и Python
+
+```bash
+curl "http://127.0.0.1:8000/candles?symbol=BTCUSDT&interval=60&category=spot&limit=50"
+```
+
+```python
+import requests
+
+r = requests.get("http://127.0.0.1:8000/candles", params={
+    "symbol":   "BTCUSDT",
+    "interval": "60",
+    "category": "spot",
+    "limit":    50,
+})
+data = r.json()
+print(data["count"])       # количество свечей
+print(data["candles"][0])  # первая свеча
+```
+
+#### Коды ошибок
+
+| Код | Причина |
+|-----|---------|
+| `400` | Неверный параметр (`interval`, `category`, формат даты) |
+| `404` | Свечи не получены (неверная пара, нет данных за период) |
 
 ---
+
+## Режим CLI
+
+Загружает свечи и сохраняет в CSV-файл.
 
 ### Использование
 
+```bash
+python byparser.py -s ПАРА -c КАТЕГОРИЯ -i ИНТЕРВАЛ [опции]
 ```
-python byparser.py -s ПАРА -c ТИП -i ИНТЕРВАЛ [опции]
-```
 
-### Обязательные аргументы
+### Параметры
 
-| Аргумент | Описание |
-|---|---|
-| `-s`, `--symbol` | Торговая пара, например `BTCUSDT` |
-| `-c`, `--category` | Тип рынка: `spot`, `linear`, `inverse` |
-| `-i`, `--interval` | Таймфрейм свечи (см. таблицу ниже) |
+| Параметр               | Описание |
+|------------------------|----------|
+| `-s`, `--symbol`       | Торговая пара (обязательный) |
+| `-c`, `--category`     | Тип рынка: `spot`, `linear`, `inverse` (обязательный) |
+| `-i`, `--interval`     | Таймфрейм (обязательный): `1`, `3`, `5`, `15`, `30`, `60`, `120`, `240`, `360`, `720`, `D`, `W`, `M` |
+| `-l`, `--limit`        | Количество свечей без диапазона (1–200, по умолчанию 200) |
+| `--start`              | Начало диапазона: `YYYY-MM-DD` или `YYYY-MM-DD HH:MM:SS` |
+| `--end`                | Конец диапазона: `YYYY-MM-DD` или `YYYY-MM-DD HH:MM:SS` |
+| `-o`, `--output`       | Путь к CSV-файлу (по умолчанию: `<ПАРА>_<КАТЕГОРИЯ>_<ИНТЕРВАЛ>.csv`) |
 
-### Опциональные аргументы
-
-| Аргумент | По умолчанию | Описание |
-|---|---|---|
-| `--start` | — | Начало диапазона: `YYYY-MM-DD` или `YYYY-MM-DD HH:MM:SS` (UTC) |
-| `--end` | — | Конец диапазона: `YYYY-MM-DD` или `YYYY-MM-DD HH:MM:SS` (UTC) |
-| `-l`, `--limit` | `200` | Кол-во свечей при запросе без диапазона (1–200). Игнорируется при `--start`/`--end` |
-| `-o`, `--output` | `<ПАРА>_<ТИП>_<ИНТЕРВАЛ>.csv` | Путь для сохранения CSV |
-
-> При указании `--start` и/или `--end` скрипт автоматически выполняет пагинацию и собирает **все** свечи в заданном диапазоне.
-
----
-
-## Таймфреймы (-i / --interval)
-
-| Значение | Период |
-|---|---|
-| `1` | 1 минута |
-| `3` | 3 минуты |
-| `5` | 5 минут |
-| `15` | 15 минут |
-| `30` | 30 минут |
-| `60` | 1 час |
-| `120` | 2 часа |
-| `240` | 4 часа |
-| `360` | 6 часов |
-| `720` | 12 часов |
-| `D` | 1 день |
-| `W` | 1 неделя |
-| `M` | 1 месяц |
-
----
-
-## Примеры запуска
+### Примеры
 
 ```bash
+# Последние 200 часовых свечей BTCUSDT
+python byparser.py -s BTCUSDT -c spot -i 60 -l 200 -o btc.csv
 
-# Последние 200 часовых свечей BTC (спот)
-python byparser.py -s BTCUSDT -c spot -i 60 -o btc.csv
+# Все 15-минутные свечи ETHUSDT за январь 2024
+python byparser.py -s ETHUSDT -c linear -i 15 --start 2024-01-01 --end 2024-02-01 -o eth.csv
 
-# Последние 50 дневных свечей ETH (спот)
-python byparser.py -s ETHUSDT -c spot -i D -l 50 -o eth_daily.csv
-
-# Все 15-минутные свечи ETH (перп. фьючерс) за январь 2024
-python byparser.py -s ETHUSDT -c linear -i 15 --start 2024-01-01 --end 2024-02-01 -o eth_jan.csv
-
-# 4-часовые свечи SOL (инверсный контракт) с конкретным временем
-python byparser.py -s SOLUSDT -c inverse -i 240 --start "2024-06-01 00:00:00" --end "2024-06-30 23:59:59" -o sol.csv
+# Дневные свечи SOLUSDT за 2023 год
+python byparser.py -s SOLUSDT -c spot -i D --start 2023-01-01 --end 2024-01-01 -o sol_2023.csv
 ```
 
----
+### Формат CSV
 
-## Формат CSV
-
-Файл содержит следующие столбцы:
-
-| Столбец | Тип | Описание |
-|---|---|---|
-| `timestamp` | int | Unix-время в миллисекундах |
-| `datetime` | str | Дата и время (`YYYY-MM-DD HH:MM:SS`) |
-| `open` | float | Цена открытия |
-| `high` | float | Максимальная цена |
-| `low` | float | Минимальная цена |
-| `close` | float | Цена закрытия |
-| `volume` | float | Объём в базовой валюте |
-| `turnover` | float | Оборот в котируемой валюте |
+```
+timestamp,datetime,open,high,low,close,volume,turnover
+1704067200000,2024-01-01 00:00:00,42000.0,42500.0,41800.0,42300.0,1234.56,52000000.0
+```
 
 ---
 
 ## Очистка аномалий
 
-Перед сохранением скрипт автоматически проверяет и устраняет следующие проблемы:
+Перед сохранением/возвратом свечи автоматически проверяются и очищаются:
 
-| Тип | Действие |
+| Тип аномалии | Действие |
 |---|---|
-| **Нарушение OHLC** — `high` < `open`/`close` или `low` > `open`/`close` | Исправляется корректировкой `high`/`low` |
-| **Полная инверсия** — `high` < `low` | Свеча удаляется |
-| **Нулевой / отрицательный объём** | Свеча удаляется |
-| **Ценовой выброс** — отклонение `close` более чем на 3σ от скользящего среднего (окно 20 свечей) | Свеча удаляется |
-| **Дубликат** — одинаковый `timestamp` | Дубль удаляется |
-| **Пропуск** — разрыв > 2 × ожидаемый интервал | Фиксируется в логе (не восполняется) |
-
-Все найденные аномалии записываются в лог с уровнем `WARNING`.
-
----
-
-## Поддерживаемые торговые пары
-
-Скрипт поддерживает любую пару, доступную на Bybit. Ниже приведены наиболее популярные.
-
-### Спот (--category spot)
-
-| Пара | Описание |
-|---|---|
-| `BTCUSDT` | Bitcoin / Tether |
-| `ETHUSDT` | Ethereum / Tether |
-| `SOLUSDT` | Solana / Tether |
-| `BNBUSDT` | BNB / Tether |
-| `XRPUSDT` | XRP / Tether |
-| `DOGEUSDT` | Dogecoin / Tether |
-| `ADAUSDT` | Cardano / Tether |
-| `AVAXUSDT` | Avalanche / Tether |
-| `DOTUSDT` | Polkadot / Tether |
-| `MATICUSDT` | Polygon / Tether |
-| `LTCUSDT` | Litecoin / Tether |
-| `LINKUSDT` | Chainlink / Tether |
-| `UNIUSDT` | Uniswap / Tether |
-| `ATOMUSDT` | Cosmos / Tether |
-| `NEARUSDT` | NEAR Protocol / Tether |
-
-### Бессрочные фьючерсы USDT (--category linear)
-
-| Пара | Описание |
-|---|---|
-| `BTCUSDT` | Bitcoin Perpetual |
-| `ETHUSDT` | Ethereum Perpetual |
-| `SOLUSDT` | Solana Perpetual |
-| `BNBUSDT` | BNB Perpetual |
-| `XRPUSDT` | XRP Perpetual |
-| `DOGEUSDT` | Dogecoin Perpetual |
-| `ADAUSDT` | Cardano Perpetual |
-| `AVAXUSDT` | Avalanche Perpetual |
-| `DOTUSDT` | Polkadot Perpetual |
-| `LINKUSDT` | Chainlink Perpetual |
-| `LTCUSDT` | Litecoin Perpetual |
-| `MATICUSDT` | Polygon Perpetual |
-| `UNIUSDT` | Uniswap Perpetual |
-| `ATOMUSDT` | Cosmos Perpetual |
-| `NEARUSDT` | NEAR Protocol Perpetual |
-
-### Инверсные контракты (--category inverse)
-
-| Пара | Описание |
-|---|---|
-| `BTCUSD` | Bitcoin / USD (расчёт в BTC) |
-| `ETHUSD` | Ethereum / USD (расчёт в ETH) |
-| `SOLUSD` | Solana / USD (расчёт в SOL) |
-| `XRPUSD` | XRP / USD (расчёт в XRP) |
-| `DOTUSD` | Polkadot / USD (расчёт в DOT) |
-
-> Полный список пар доступен на [bybit.com](https://www.bybit.com). Название пары передаётся в аргумент `-s` в верхнем регистре.
-
-
-
-## Скрипт createReports.py (интерфейс с Tinkoff API)
-### Основное назначение
-Скрипт **createReports.py** служит для построения отчётов по акциям и соответствующим параметрам (пример файла конфигурации задан в директории **createReports/configureScript.yml**) или в источнике ниже.
-```yaml
-instrumentTypes:
-  INSTRUMENT_TYPE_UNSPECIFIED: &unspecified 0
-  INSTRUMENT_TYPE_BOND: &bond 1
-  INSTRUMENT_TYPE_SHARE: &share 2
-  INSTRUMENT_TYPE_CURRENCY: &currency 3
-  INSTRUMENT_TYPE_ETF: &etf 4
-  INSTRUMENT_TYPE_FUTURES: &futures 5
-  INSTRUMENT_TYPE_SP: &sp 6
-  INSTRUMENT_TYPE_OPTION: &option 7
-  INSTRUMENT_TYPE_CLEARING_CERTIFICATE: &certificate 8
-  INSTRUMENT_TYPE_INDEX: &index 9
-  INSTRUMENT_TYPE_COMMODITY: &commodity 10
-
-fromDate: &from_date "21.10.2024 00:00:00"
-toDate: &to_date "21.10.2025 00:00:00"
-
-stock:
-  Sberbank:
-    ticker: "SBER"
-    interval: 2H
-    from_date: *from_date
-    to_date: *to_date
-    instrument_type: *share
-
-  T-Technology:
-    ticker: "T"
-    interval: 2H
-    from_date: *from_date
-    to_date: *to_date
-    instrument_type: *share
-
-  VTB:
-    ticker: "VTBR"
-    interval: 2H
-    from_date: *from_date
-    to_date: *to_date
-    instrument_type: *share
-
-  Yandex:
-    ticker: "YDEX"
-    interval: 2H
-    from_date: *from_date
-    to_date: *to_date
-    instrument_type: *share
-
-  X5:
-    ticker: "X5"
-    interval: 2H
-    from_date: *from_date
-    to_date: *to_date
-    instrument_type: *share
-
-  VK:
-    ticker: "VKCO"
-    interval: 2H
-    from_date: *from_date
-    to_date: *to_date
-    instrument_type: *share
-
-  Lukoil:
-    ticker: "LKOH"
-    interval: 2H
-    from_date: *from_date
-    to_date: *to_date
-    instrument_type: *share
-
-  PIK:
-    ticker: "PIKK"
-    interval: 2H
-    from_date: *from_date
-    to_date: *to_date
-    instrument_type: *share
-
-  Norilsk Nikel:
-    ticker: "GMKN"
-    interval: 2H
-    from_date: *from_date
-    to_date: *to_date
-    instrument_type: *share
-
-  SeverStal:
-    ticker: "CHMF"
-    interval: 2H
-    from_date: *from_date
-    to_date: *to_date
-    instrument_type: *share
-```
-## Активация
-В файл ```.env``` поместить токен Т-Инвестиций.
-Создать виртуальное окружение, используя ```python -m vemv ./.env```, затем перейти в него ```./.env/Scripts/activate```
-Установить зависимости ```pip install -r requirements.txt```
-
-Запустить скрипт при помощи вызова команды ```python .createReports.py -f <путь к .yaml конфигурации> -d <путь к директории, куда необходимо загрузить отчёты>```
-
-Для справки может служить команда ```python ./createReports.py --help```
-
-
-## Скрипт createDividendsReports.py
-
-### Основное назначение
-Скрипт **createDividendsReports.py** служит для построения отчётов по дивидендам инструментов, указанных в конфигурационном файле (пример файла конфигурации задан в директории **createDividendReports/configureDividends.yml**). Отчёты формируются на основе данных Тинькофф Инвестиций через официальное Python‑SDK и сохраняются в формате CSV и Parquet по аналогии с отчётами по свечам.
-
-Пример конфигурационного файла:
-
-```yaml
-fromDate: &from_date "21.10.2024 00:00:00"
-toDate: &to_date "21.10.2025 00:00:00" 
-
-stock:
-  Sberbank:
-    ticker: "SBER"
-    from_date: *from_date
-    to_date: *to_date
-
-  T-Technology:
-    ticker: "T"
-    from_date: *from_date
-    to_date: *to_date
-
-  VTB:
-    ticker: "VTBR"
-    from_date: *from_date
-    to_date: *to_date
-
-  Yandex:
-    ticker: "YDEX"
-    from_date: *from_date
-    to_date: *to_date
-
-  X5:
-    ticker: "X5"
-    from_date: *from_date
-    to_date: *to_date
-
-  VK:
-    ticker: "VKCO"
-    from_date: *from_date
-    to_date: *to_date
-
-  Lukoil:
-    ticker: "LKOH"
-    from_date: *from_date
-    to_date: *to_date
-
-  PIK:
-    ticker: "PIKK"
-    from_date: *from_date
-    to_date: *to_date
-
-  Norilsk Nikel:
-    ticker: "GMKN"
-    from_date: *from_date
-    to_date: *to_date
-
-  SeverStal:
-    ticker: "CHMF"
-    from_date: *from_date
-    to_date: *to_date
-```
-
-Для каждого инструмента по тикеру и диапазону дат запрашиваются события выплаты дивидендов через метод `GetDividends` API, данные приводятся к `pandas.DataFrame` и сохраняются в отчётные файлы для дальнейшего анализа.
-
-### Активация
-
-1. В файл **`.env`** поместить токен Тинькофф Инвестиций (`TINKOFF_TOKEN=...`), который SDK будет читать через `python-dotenv` и переменные окружения.
-2. Создать виртуальное окружение, используя, Python 3.12:
-   ```bash
-   python3.11 -m venv .venv
-   source .venv/bin/activate
-   ```
-3. Установить зависимости:
-   ```bash
-   pip install -r requirements.txt
-   ```
-
-### Запуск
-
-Запустить скрипт можно командой из директории проекта:
-
-```bash
-python ./createDividendsReports.py \
-  -f ./createDividendReports/configureDividends.yml \
-  -d ./createDividendReports/dividends_reports
-```
-
-Для справки по параметрам доступна команда:
-
-```bash
-python ./createDividendsReports.py --help
-```
-
-# byparser — Bybit Candle Parser
-
-Скрипт загружает свечи с биржи Bybit, очищает их от аномалий и сохраняет результат в CSV-файл. Предназначен для запуска по расписанию (cron).
-
----
-
-## Требования
-
-- Python 3.10+
-- Зависимости:
-
-```bash
-pip install -r requirements.txt
-```
-
-`requirements.txt`:
-```
-pybit
-python-dotenv
-```
+| Дубли по timestamp | Удаляются |
+| Нарушение OHLC-логики (`high < low` и т.д.) | Исправляются или удаляются |
+| Нулевой / отрицательный объём | Удаляются |
+| Ценовые выбросы (Z-score > 3.0) | Удаляются |
+| Пропуски в хронологии | Логируются |
 
 ---
 
 ## Конфигурация (.env)
 
-Перед запуском создайте файл `.env` в директории скрипта:
+Создайте файл `.env` в директории скрипта для настройки логирования:
 
 ```env
-LOG_PATH=logs              # Директория для лог-файлов
-LOG_FILE_SIZE=5242880      # Максимальный размер одного лог-файла в байтах (здесь 5 МБ)
-BACKUP_FILES_COUNT=5       # Количество хранимых резервных копий лога
+LOG_PATH=logs                  # директория лог-файлов
+LOG_FILE_SIZE=5242880          # максимальный размер файла в байтах (5 МБ)
+BACKUP_FILES_COUNT=5           # количество резервных копий лога
 ```
 
-Лог-файл создаётся автоматически по пути `<LOG_PATH>/byparser.log` с ротацией.
+Логи пишутся в `logs/byparser.log`.
 
 ---
 
-## Использование
+## Развёртывание на веб-сервере
 
-```
-python byparser.py -s ПАРА -c ТИП -i ИНТЕРВАЛ [опции]
-```
+### Требования
 
-### Обязательные аргументы
-
-| Аргумент | Описание |
-|---|---|
-| `-s`, `--symbol` | Торговая пара, например `BTCUSDT` |
-| `-c`, `--category` | Тип рынка: `spot`, `linear`, `inverse` |
-| `-i`, `--interval` | Таймфрейм свечи (см. таблицу ниже) |
-
-### Опциональные аргументы
-
-| Аргумент | По умолчанию | Описание |
-|---|---|---|
-| `--start` | — | Начало диапазона: `YYYY-MM-DD` или `YYYY-MM-DD HH:MM:SS` (UTC) |
-| `--end` | — | Конец диапазона: `YYYY-MM-DD` или `YYYY-MM-DD HH:MM:SS` (UTC) |
-| `-l`, `--limit` | `200` | Кол-во свечей при запросе без диапазона (1–200). Игнорируется при `--start`/`--end` |
-| `-o`, `--output` | `<ПАРА>_<ТИП>_<ИНТЕРВАЛ>.csv` | Путь для сохранения CSV |
-
-> При указании `--start` и/или `--end` скрипт автоматически выполняет пагинацию и собирает **все** свечи в заданном диапазоне.
+- Python 3.10+
+- Linux-сервер (Ubuntu 22.04 / Debian 12 и т.д.)
+- Открытый порт (например, `8000`) или обратный прокси (nginx)
 
 ---
 
-## Таймфреймы (-i / --interval)
-
-| Значение | Период |
-|---|---|
-| `1` | 1 минута |
-| `3` | 3 минуты |
-| `5` | 5 минут |
-| `15` | 15 минут |
-| `30` | 30 минут |
-| `60` | 1 час |
-| `120` | 2 часа |
-| `240` | 4 часа |
-| `360` | 6 часов |
-| `720` | 12 часов |
-| `D` | 1 день |
-| `W` | 1 неделя |
-| `M` | 1 месяц |
-
----
-
-## Примеры запуска
+### 1. Клонирование и установка зависимостей
 
 ```bash
-
-# Последние 200 часовых свечей BTC (спот)
-python byparser.py -s BTCUSDT -c spot -i 60 -o btc.csv
-
-# Последние 50 дневных свечей ETH (спот)
-python byparser.py -s ETHUSDT -c spot -i D -l 50 -o eth_daily.csv
-
-# Все 15-минутные свечи ETH (перп. фьючерс) за январь 2024
-python byparser.py -s ETHUSDT -c linear -i 15 --start 2024-01-01 --end 2024-02-01 -o eth_jan.csv
-
-# 4-часовые свечи SOL (инверсный контракт) с конкретным временем
-python byparser.py -s SOLUSDT -c inverse -i 240 --start "2024-06-01 00:00:00" --end "2024-06-30 23:59:59" -o sol.csv
+git clone <репозиторий> /opt/byparser
+cd /opt/byparser
+pip install -r requirements.txt
 ```
 
 ---
 
-## Формат CSV
+### 2. Настройка окружения
 
-Файл содержит следующие столбцы:
+```bash
+cp .env.example .env   # или создайте .env вручную
+nano .env
+```
 
-| Столбец | Тип | Описание |
-|---|---|---|
-| `timestamp` | int | Unix-время в миллисекундах |
-| `datetime` | str | Дата и время (`YYYY-MM-DD HH:MM:SS`) |
-| `open` | float | Цена открытия |
-| `high` | float | Максимальная цена |
-| `low` | float | Минимальная цена |
-| `close` | float | Цена закрытия |
-| `volume` | float | Объём в базовой валюте |
-| `turnover` | float | Оборот в котируемой валюте |
+```env
+LOG_PATH=logs
+LOG_FILE_SIZE=5242880
+BACKUP_FILES_COUNT=5
+```
 
 ---
 
-## Очистка аномалий
+### 3. Запуск через systemd 
 
-Перед сохранением скрипт автоматически проверяет и устраняет следующие проблемы:
+Создайте unit-файл:
 
-| Тип | Действие |
-|---|---|
-| **Нарушение OHLC** — `high` < `open`/`close` или `low` > `open`/`close` | Исправляется корректировкой `high`/`low` |
-| **Полная инверсия** — `high` < `low` | Свеча удаляется |
-| **Нулевой / отрицательный объём** | Свеча удаляется |
-| **Ценовой выброс** — отклонение `close` более чем на 3σ от скользящего среднего (окно 20 свечей) | Свеча удаляется |
-| **Дубликат** — одинаковый `timestamp` | Дубль удаляется |
-| **Пропуск** — разрыв > 2 × ожидаемый интервал | Фиксируется в логе (не восполняется) |
+```bash
+sudo nano /etc/systemd/system/byparser.service
+```
 
-Все найденные аномалии записываются в лог с уровнем `WARNING`.
+```ini
+[Unit]
+Description=Bybit Parser HTTP Server
+After=network.target
 
----
+[Service]
+User=www-data
+WorkingDirectory=/opt/byparser/bybit_parser
+ExecStart=/usr/bin/python3 byparser.py --serve --host 0.0.0.0 --port 80
+Restart=always
+RestartSec=5
+Environment=PYTHONUNBUFFERED=1
 
-## Поддерживаемые торговые пары
-
-Скрипт поддерживает любую пару, доступную на Bybit. Ниже приведены наиболее популярные.
-
-### Спот (--category spot)
-
-| Пара | Описание |
-|---|---|
-| `BTCUSDT` | Bitcoin / Tether |
-| `ETHUSDT` | Ethereum / Tether |
-| `SOLUSDT` | Solana / Tether |
-| `BNBUSDT` | BNB / Tether |
-| `XRPUSDT` | XRP / Tether |
-| `DOGEUSDT` | Dogecoin / Tether |
-| `ADAUSDT` | Cardano / Tether |
-| `AVAXUSDT` | Avalanche / Tether |
-| `DOTUSDT` | Polkadot / Tether |
-| `MATICUSDT` | Polygon / Tether |
-| `LTCUSDT` | Litecoin / Tether |
-| `LINKUSDT` | Chainlink / Tether |
-| `UNIUSDT` | Uniswap / Tether |
-| `ATOMUSDT` | Cosmos / Tether |
-| `NEARUSDT` | NEAR Protocol / Tether |
-
-> Полный список пар доступен на [bybit.com](https://www.bybit.com). Название пары передаётся в аргумент `-s` в верхнем регистре.
+[Install]
+WantedBy=multi-user.target
+```
