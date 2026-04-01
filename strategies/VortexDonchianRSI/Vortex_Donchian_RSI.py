@@ -1,14 +1,46 @@
+"""
+Стратегия Vortex + Donchian + RSI + ATR (бэктест на CSV).
+
+Запуск из корня репозитория:
+  python strategies/VortexDonchianRSI/Vortex_Donchian_RSI.py --csv data/BTCUSDT_2h.csv --mode adaptive
+
+Описание: см. Vortex_Donchian_RSI_Strategy.md в этой же папке.
+"""
+
+from __future__ import annotations
+
 import argparse
+import sys
+from pathlib import Path
+
 import numpy as np
 import pandas as pd
 
-from rolling_catboost import load_csv, sharpe_and_sum
+_ROOT = Path(__file__).resolve().parents[2]
+if str(_ROOT) not in sys.path:
+    sys.path.insert(0, str(_ROOT))
+_LOCAL = Path(__file__).resolve().parent
+if str(_LOCAL) not in sys.path:
+    sys.path.insert(0, str(_LOCAL))
+
+try:
+    from rolling_catboost import load_csv, sharpe_and_sum
+except ModuleNotFoundError:
+    from csv_metrics import load_csv, sharpe_and_sum
+
+from vortex_donchian_indicators import (
+    compute_atr,
+    compute_donchian,
+    compute_ema,
+    compute_regime,
+    compute_rsi,
+    compute_vortex,
+)
 
 
 def _preset_params(preset: str) -> dict:
     preset = (preset or "").strip().lower()
     if preset in ("trend", "long", "long_only"):
-        # Параметры, которые дали >=15% на BTC/ETH (исходные датасеты)
         return dict(
             donchian_period=40,
             ema_period=250,
@@ -16,7 +48,6 @@ def _preset_params(preset: str) -> dict:
             allow_short=False,
         )
     if preset in ("bear", "bear_short"):
-        # Параметры, которые вытащили BTC 2021-2022 (bear regime + shorts)
         return dict(
             donchian_period=55,
             ema_period=250,
@@ -27,92 +58,7 @@ def _preset_params(preset: str) -> dict:
             ema_slope_period=20,
             ema_slope_threshold=0.0,
         )
-    raise ValueError(f"Unknown preset: {preset}. Use: auto|trend|bear|custom")
-
-
-def compute_regime(
-    close: pd.Series,
-    ema_period: int = 250,
-    slope_period: int = 20,
-    lookback: int = 200,
-    threshold: float = 0.0,
-) -> pd.Series:
-    """
-    Regime (trend/bear) БЕЗ заглядывания в будущее:
-    - считаем EMA(ema_period)
-    - считаем наклон EMA за slope_period
-    - берём rolling mean наклона по lookback и сдвигаем на 1 бар, чтобы режим на баре t
-      был известен до принятия решения на этом баре.
-    """
-    ema = compute_ema(close.astype(float), ema_period)
-    ema_ref = ema.shift(slope_period)
-    ema_slope = (ema - ema_ref) / (ema_ref.abs() + 1e-12)
-    score = ema_slope.rolling(lookback, min_periods=1).mean().shift(1).fillna(0.0)
-    regime = pd.Series(np.where(score >= threshold, "trend", "bear"), index=close.index)
-    return regime
-
-
-def compute_vortex(high, low, close, period=14):
-    prev_high = high.shift(1)
-    prev_low = low.shift(1)
-    prev_close = close.shift(1)
-
-    vm_plus = (high - prev_low).abs()
-    vm_minus = (low - prev_high).abs()
-
-    tr = pd.concat(
-        [
-            (high - low).abs(),
-            (high - prev_close).abs(),
-            (low - prev_close).abs(),
-        ],
-        axis=1,
-    ).max(axis=1)
-
-    tr_sum = tr.rolling(period, min_periods=1).sum()
-    vi_plus = vm_plus.rolling(period, min_periods=1).sum() / (tr_sum + 1e-12)
-    vi_minus = vm_minus.rolling(period, min_periods=1).sum() / (tr_sum + 1e-12)
-
-    return vi_plus, vi_minus
-
-
-def compute_donchian(high, low, period=20):
-    upper = high.rolling(period, min_periods=1).max()
-    lower = low.rolling(period, min_periods=1).min()
-    mid = (upper + lower) / 2.0
-    return upper, lower, mid
-
-
-def compute_rsi(close, period=14):
-    delta = close.diff()
-    gain = delta.clip(lower=0)
-    loss = -delta.clip(upper=0)
-
-    avg_gain = gain.rolling(period, min_periods=1).mean()
-    avg_loss = loss.rolling(period, min_periods=1).mean()
-
-    rs = avg_gain / (avg_loss + 1e-12)
-    rsi = 100 - (100 / (1 + rs))
-    return rsi.fillna(50.0)
-
-
-def compute_ema(close, period=200):
-    return close.ewm(span=period, adjust=False).mean()
-
-
-def compute_atr(high, low, close, period=14):
-    prev_close = close.shift(1)
-
-    tr = pd.concat(
-        [
-            (high - low).abs(),
-            (high - prev_close).abs(),
-            (low - prev_close).abs(),
-        ],
-        axis=1,
-    ).max(axis=1)
-
-    return tr.rolling(period, min_periods=1).mean()
+    raise ValueError(f"Unknown preset: {preset}. Use: trend|bear|custom")
 
 
 def calculate_cagr(returns: pd.Series, bars_per_year: int = 4380) -> float:
@@ -158,7 +104,7 @@ def strategy(
     rsi_long=55.0,
     rsi_short=45.0,
     allow_short=True,
-    short_mode="always",  # always|bear|never
+    short_mode="always",
     ema_slope_period=20,
     ema_slope_threshold=0.0,
     cost_bps=5.0,
@@ -257,19 +203,11 @@ def adaptive_strategy(
     ema: pd.Series,
     atr: pd.Series,
     regime: pd.Series,
-    # trend params
     rsi_long_trend: float = 60.0,
-    # bear params
     rsi_long_bear: float = 60.0,
     rsi_short_bear: float = 35.0,
     cost_bps: float = 5.0,
 ) -> tuple[pd.Series, pd.Series]:
-    """
-    Адаптивная стратегия без lookahead:
-    - regime[t] определяется только прошлой историей (см. compute_regime)
-    - при trend: long-only (жёсткий вход, как в трендовом пресете)
-    - при bear: допускаем short (и long тоже можно, но входы фильтруются тем же режимом)
-    """
     n = len(close)
     pos = np.zeros(n, dtype=int)
     trades = np.zeros(n, dtype=int)
@@ -302,7 +240,7 @@ def adaptive_strategy(
             and close.iloc[t] > up.iloc[t - 1]
             and rsi.iloc[t] >= rsi_long
             and atr_filter
-            and is_trend  # long только в trend-режиме
+            and is_trend
         )
 
         long_exit = (
@@ -390,11 +328,9 @@ def main():
     high = df["high"].astype(float)
     low = df["low"].astype(float)
 
-    # Presets override params (for reproducible runs)
     preset = (args.preset or "custom").strip().lower()
     if preset != "custom":
         p = _preset_params(preset)
-        # apply only keys present
         for k, v in p.items():
             setattr(args, k, v)
         print(f"[preset] using {preset}: {p}")
@@ -408,7 +344,6 @@ def main():
     print("Running strategy...")
     mode = (args.mode or "static").strip().lower()
     if mode == "adaptive":
-        # Индикаторы для двух наборов (trend/bear) считаются заранее, а выбор делается на каждом баре по regime[t].
         upper_t, lower_t, mid_t = compute_donchian(high, low, period=40)
         upper_b, lower_b, mid_b = compute_donchian(high, low, period=55)
         regime = compute_regime(
