@@ -73,21 +73,20 @@ class HMAStrategy(Strategy):
             return
 
         if order.status == order.Completed:
-            if self.position.size != 0:
-                self._set_entry_state(order.executed.price)
-            else:
-                self._reset_position_state()
             self.order = None
 
         elif order.status in [order.Canceled, order.Margin, order.Rejected]:
             self.order = None
 
     def notify_trade(self, trade):
-        if trade.isclosed:
+        if trade.justopened:
+            self._set_entry_state(trade.price)
+        elif trade.isclosed:
             self.log(
                 f'TRADE CLOSED, Gross PnL: {trade.pnl:.2f}, '
                 f'Net PnL: {trade.pnlcomm:.2f}'
             )
+            self._reset_position_state()
 
     def _set_entry_state(self, price):
         atr = max(float(self.atr[0]), 1e-8)

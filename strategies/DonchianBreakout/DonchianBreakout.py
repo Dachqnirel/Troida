@@ -63,27 +63,25 @@ class DonchianBreakout(Strategy):
             return
 
         if order.status == order.Completed:
-            if self.position.size > 0:
-                self.entry_price = order.executed.price
-                self.highest_price = order.executed.price
-                self.stop_price = (
-                    order.executed.price
-                    - float(self.atr[0]) * self.p.atr_stop_multiplier
-                )
-            else:
-                self.entry_price = None
-                self.highest_price = None
-                self.stop_price = None
             self.order = None
         elif order.status in [order.Canceled, order.Margin, order.Rejected]:
             self.order = None
 
     def notify_trade(self, trade):
-        if trade.isclosed:
+        if trade.justopened:
+            self.entry_price = trade.price
+            self.highest_price = trade.price
+            self.stop_price = (
+                trade.price - float(self.atr[0]) * self.p.atr_stop_multiplier
+            )
+        elif trade.isclosed:
             self.log(
                 f'TRADE CLOSED: GROSS PnL {trade.pnl:.2f}, '
                 f'NET PnL {trade.pnlcomm:.2f}'
             )
+            self.entry_price = None
+            self.highest_price = None
+            self.stop_price = None
 
     def _calc_size(self, price, atr):
         cash = self.broker.getcash()

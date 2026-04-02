@@ -34,22 +34,24 @@ class SimpleSMA(Strategy):
             return
 
         if order.status == order.Completed:
-            if self.position.size > 0:
-                atr = float(self.atr[0])
-                self.stop_price = (
-                    order.executed.price
-                    - atr * self.params.atr_stop_multiplier
-                )
-                self.take_profit_price = (
-                    order.executed.price
-                    + atr * self.params.atr_take_profit_multiplier
-                )
-            else:
-                self.stop_price = None
-                self.take_profit_price = None
             self.order = None
         elif order.status in [order.Canceled, order.Margin, order.Rejected]:
             self.order = None
+
+    def notify_trade(self, trade):
+        if trade.justopened:
+            atr = float(self.atr[0])
+            self.stop_price = (
+                trade.price
+                - atr * self.params.atr_stop_multiplier
+            )
+            self.take_profit_price = (
+                trade.price
+                + atr * self.params.atr_take_profit_multiplier
+            )
+        elif trade.isclosed:
+            self.stop_price = None
+            self.take_profit_price = None
 
     def next(self):
         super().next()
