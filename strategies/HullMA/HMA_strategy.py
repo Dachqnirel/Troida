@@ -32,106 +32,154 @@ class HullMovingAverage(bt.Indicator):
 
 class HMAStrategy(Strategy):
     """
-    Простая трендовая стратегия по Hull Moving Average.
+    Улучшенная трендовая стратегия по Hull Moving Average.
 
     Логика:
-    - Лонг, когда цена пересекает HMA снизу вверх.
-    - Шорт, когда цена пересекает HMA сверху вниз.
-    - Выход по:
-        * обратному пересечению,
-        * стоп-лоссу,
-        * тейк-профиту.
+    - Вход по пересечению цены и HMA только в сторону старшего тренда.
+    - Размер позиции ограничен риском на сделку и максимальной загрузкой капитала.
+    - Выход по обратному пересечению, ATR-стопу, трейлинг-стопу и тейк-профиту.
     """
     params = (
-        ('hma_period', 20),     # период HMA
-        ('position_size', 0.1), # доля капитала в сделке
-        ('stop_loss', 0.02),    # стоп-лосс 2%
-        ('take_profit', 0.04),  # тейк-профит 4%
+        ('hma_period', 20),
+        ('trend_ema_period', 55),
+        ('atr_period', 14),
+        ('risk_per_trade', 0.02),
+        ('max_position_size', 0.2),
+        ('atr_stop_multiplier', 2.3),
+        ('atr_trail_multiplier', 1.4),
+        ('atr_take_profit_multiplier', 4.0),
     )
 
-    def __init__(self, **kwargs):
-        super().__init__(**kwargs)
+    def __init__(self):
+        super().__init__()
 
         self.data0 = self.datas[0]
         self.hma = HullMovingAverage(self.data0, period=self.params.hma_period)
+        self.trend_ema = bt.indicators.EMA(self.data0, period=self.params.trend_ema_period)
+        self.atr = bt.indicators.ATR(self.data0, period=self.params.atr_period)
+        self.price_cross = bt.indicators.CrossOver(self.data0.close, self.hma)
 
-        self.in_position = False
-        self.is_long = None
+        self.order = None
         self.entry_price = None
+        self.stop_price = None
+        self.take_profit_price = None
+        self.highest_price = None
+        self.lowest_price = None
 
     def notify_order(self, order):
+        super().notify_order(order)
+
         if order.status in [order.Submitted, order.Accepted]:
             return
 
         if order.status == order.Completed:
-            side = 'BUY' if order.isbuy() else 'SELL'
-            self.log(
-                f'{side} EXECUTED, Price: {order.executed.price:.2f}, '
-                f'Size: {order.executed.size:.4f}'
-            )
+            if self.position.size != 0:
+                self._set_entry_state(order.executed.price)
+            else:
+                self._reset_position_state()
+            self.order = None
 
         elif order.status in [order.Canceled, order.Margin, order.Rejected]:
-            self.log(f'ORDER {order.Status[order.status]}')
+            self.order = None
 
-    def calculate_trade_size(self, data):
-        """Размер позиции как доля от кэша."""
+    def notify_trade(self, trade):
+        if trade.isclosed:
+            self.log(
+                f'TRADE CLOSED, Gross PnL: {trade.pnl:.2f}, '
+                f'Net PnL: {trade.pnlcomm:.2f}'
+            )
+
+    def _set_entry_state(self, price):
+        atr = max(float(self.atr[0]), 1e-8)
+
+        self.entry_price = price
+        self.highest_price = price
+        self.lowest_price = price
+
+        if self.position.size > 0:
+            self.stop_price = price - atr * self.params.atr_stop_multiplier
+            self.take_profit_price = (
+                price + atr * self.params.atr_take_profit_multiplier
+            )
+        else:
+            self.stop_price = price + atr * self.params.atr_stop_multiplier
+            self.take_profit_price = (
+                price - atr * self.params.atr_take_profit_multiplier
+            )
+
+    def _reset_position_state(self):
+        self.entry_price = None
+        self.stop_price = None
+        self.take_profit_price = None
+        self.highest_price = None
+        self.lowest_price = None
+
+    def calculate_trade_size(self, price, atr):
+        stop_distance = atr * self.params.atr_stop_multiplier
+        if price <= 0 or stop_distance <= 0:
+            return 0.0
+
         cash = self.broker.get_cash()
-        size = (cash * self.params.position_size) / data.close[0]
-        return size
+        risk_size = (cash * self.params.risk_per_trade) / stop_distance
+        capped_size = (cash * self.params.max_position_size) / price
+        return max(0.0, min(risk_size, capped_size))
 
     def next(self):
         super().next()
 
-        price = self.data0.close[0]
-        hma_curr = self.hma[0]
-
-        if len(self.data0) < 2:
+        if self.order:
             return
 
-        price_prev = self.data0.close[-1]
-        hma_prev = self.hma[-1]
+        price = float(self.data0.close[0])
+        atr = float(self.atr[0])
+        hma_rising = self.hma[0] > self.hma[-1]
+        hma_falling = self.hma[0] < self.hma[-1]
+        trend_long = price > self.trend_ema[0]
+        trend_short = price < self.trend_ema[0]
 
-        # Нет позиции — ищем вход
-        if not self.in_position:
-            # Лонг: пересечение снизу вверх
-            if price > hma_curr and price_prev <= hma_prev:
-                size = self.calculate_trade_size(self.data0)
-                self.buy(data=self.data0, size=size)
-                self.in_position = True
-                self.is_long = True
-                self.entry_price = price
-                self.log(f'ENTER LONG at {price:.2f}')
+        if not self.position:
+            if self.price_cross > 0 and trend_long and hma_rising:
+                size = self.calculate_trade_size(price, atr)
+                if size > 0:
+                    self.log(f'ENTER LONG at {price:.2f}, size={size:.4f}')
+                    self.order = self.buy(data=self.data0, size=size)
+            elif self.price_cross < 0 and trend_short and hma_falling:
+                size = self.calculate_trade_size(price, atr)
+                if size > 0:
+                    self.log(f'ENTER SHORT at {price:.2f}, size={size:.4f}')
+                    self.order = self.sell(data=self.data0, size=size)
+            return
 
-            # Шорт: пересечение сверху вниз
-            elif price < hma_curr and price_prev >= hma_prev:
-                size = self.calculate_trade_size(self.data0)
-                self.sell(data=self.data0, size=size)
-                self.in_position = True
-                self.is_long = False
-                self.entry_price = price
-                self.log(f'ENTER SHORT at {price:.2f}')
+        if self.position.size > 0:
+            self.highest_price = max(self.highest_price, price)
+            trailing_stop = self.highest_price - (
+                atr * self.params.atr_trail_multiplier
+            )
+            self.stop_price = max(self.stop_price, trailing_stop)
 
-        # Уже в позиции — контролируем выход
+            exit_by_cross = self.price_cross < 0 and hma_falling
+            exit_by_stop = price <= self.stop_price
+            exit_by_target = price >= self.take_profit_price
+
+            if exit_by_cross or exit_by_stop or exit_by_target:
+                reason = 'cross' if exit_by_cross else 'stop' if exit_by_stop else 'target'
+                self.log(f'EXIT LONG by {reason} at {price:.2f}')
+                self.order = self.close(data=self.data0)
         else:
-            if self.is_long:
-                profit_pct = (price - self.entry_price) / self.entry_price
-                exit_by_cross = price < hma_curr and price_prev >= hma_prev
-            else:
-                profit_pct = (self.entry_price - price) / self.entry_price
-                exit_by_cross = price > hma_curr and price_prev <= hma_prev
+            self.lowest_price = min(self.lowest_price, price)
+            trailing_stop = self.lowest_price + (
+                atr * self.params.atr_trail_multiplier
+            )
+            self.stop_price = min(self.stop_price, trailing_stop)
 
-            exit_by_sl = profit_pct <= -self.params.stop_loss
-            exit_by_tp = profit_pct >= self.params.take_profit
+            exit_by_cross = self.price_cross > 0 and hma_rising
+            exit_by_stop = price >= self.stop_price
+            exit_by_target = price <= self.take_profit_price
 
-            if exit_by_sl or exit_by_tp or exit_by_cross:
-                self.close(data=self.data0)
-                self.log(
-                    f'EXIT position at {price:.2f}, '
-                    f'PnL: {profit_pct * 100:.2f}%'
-                )
-                self.in_position = False
-                self.is_long = None
-                self.entry_price = None
+            if exit_by_cross or exit_by_stop or exit_by_target:
+                reason = 'cross' if exit_by_cross else 'stop' if exit_by_stop else 'target'
+                self.log(f'EXIT SHORT by {reason} at {price:.2f}')
+                self.order = self.close(data=self.data0)
 
 
 if __name__ == '__main__':
@@ -144,7 +192,11 @@ if __name__ == '__main__':
         end_date="01.06.2022",
         log_orders=True,
         hma_period=20,
-        position_size=0.1,
-        stop_loss=0.02,
-        take_profit=0.04,
+        trend_ema_period=55,
+        atr_period=14,
+        risk_per_trade=0.02,
+        max_position_size=0.2,
+        atr_stop_multiplier=2.3,
+        atr_trail_multiplier=1.4,
+        atr_take_profit_multiplier=4.0,
     )
