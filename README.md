@@ -1,3 +1,28 @@
+# Troida
+
+**Troida** - фреймворк для алгоритмической торговли на финансовых рынках.
+
+## Навигация
+
+1. [backtesting](backtesting) - каркас для стратегий, оптимизации и визуализации результатов.
+2. [strategies](strategies) - каталог торговых стратегий.
+3. [documentation](documentation) - база знаний и статьи по индикаторам, подходам и `backtrader`.
+4. [createReports](createReports) - модуль выгрузки и подготовки свечных данных из T-Invest API.
+5. [createDividendReports](createDividendReports) - модуль выгрузки дивидендных данных.
+6. [createBacktests](createBacktests) - отдельный модуль фьючерсного бэктеста на `backtrader`.
+7. [requirements.txt](requirements.txt) - корневой список зависимостей проекта.
+
+## Рекомендации по разработке
+
+1. Соблюдайте стандарт [PEP 8](https://pythonworld.ru/osnovy/pep-8-rukovodstvo-po-napisaniyu-koda-na-python.html).
+2. Перед реализацией проверяйте документацию библиотек, особенно `backtrader`.
+3. Предпочитайте стандартные возможности библиотек вместо лишних самописных решений.
+4. Декомпозируйте задачи на переиспользуемые модули, классы и функции.
+5. Документируйте неочевидные участки кода и формулы.
+6. Пишите короткие, но осмысленные коммиты.
+
+---
+
 # Moscow Polytech University
 ![some text](https://sun9-44.userapi.com/s/v1/if2/-56bVS1t1sjIx3cO_p5eevk2150OLx5k8yZbU8tn5t8ppiQKF-1Kex6QJK1bVosHkDyHNjng75aNoaoT6QK94wT8.jpg?quality=95&as=32x7,48x11,72x17,108x25,160x38,240x56,360x84,480x113,540x127,640x150,720x169,1080x253,1280x300,1440x338,2003x470&from=bu&cs=2003x0)
 ## Подкоманда "Данные и бэктест"
@@ -117,13 +142,13 @@ stock:
 ## Скрипт createDividendsReports.py
 
 ### Основное назначение
-Скрипт **createDividendsReports.py** служит для построения отчётов по дивидендам инструментов, указанных в конфигурационном файле (пример файла конфигурации задан в директории **createDividendReports/configureDividends.yml**). Отчёты формируются на основе данных Тинькофф Инвестиций через официальное Python‑SDK и сохраняются в формате CSV и Parquet по аналогии с отчётами по свечам.
+Скрипт **createDividendsReports.py** служит для построения отчётов по дивидендам инструментов, указанных в конфигурационном файле (пример файла конфигурации задан в директории **createDividendReports/configureDividends.yml**). Отчёты формируются на основе данных Тинькофф Инвестиций через официальное Python-SDK и сохраняются в формате CSV и Parquet по аналогии с отчётами по свечам.
 
 Пример конфигурационного файла:
 
 ```yaml
 fromDate: &from_date "21.10.2024 00:00:00"
-toDate: &to_date "21.10.2025 00:00:00" 
+toDate: &to_date "21.10.2025 00:00:00"
 
 stock:
   Sberbank:
@@ -182,7 +207,7 @@ stock:
 ### Активация
 
 1. В файл **`.env`** поместить токен Тинькофф Инвестиций (`TINKOFF_TOKEN=...`), который SDK будет читать через `python-dotenv` и переменные окружения.
-2. Создать виртуальное окружение, используя, Python 3.12:
+2. Создать виртуальное окружение, используя Python 3.12:
    ```bash
    python3.11 -m venv .venv
    source .venv/bin/activate
