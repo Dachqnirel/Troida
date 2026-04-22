@@ -1,0 +1,28 @@
+# Для smoke-test можно использовать существующий CSV из createReports.
+# Для реального прогона на фьючерсах достаточно подставить путь к CSV/Parquet
+# с котировками нужного фьючерсного контракта.
+
+instrument_name: "SBER futures-like demo"
+
+data:
+  path: "../createReports/reports2/VERIFIED_REPORTS_SHORES/сsv/08.10.2024 13.00.00 - 09.10.2025 13.00.00/SBER_2H_20241008_130000_20251009_130000.csv"
+  format: "csv"
+  drop_non_present_bars: true
+
+broker:
+  starting_cash: 500000.0
+  commission: 15.0
+  margin: 15000.0
+  multiplier: 10.0
+
+strategy:
+  contracts: 1
+  allow_short: true
+  psar_period: 2
+  psar_af: 0.02
+  psar_afmax: 0.2
+  ema_period: 50
+  margin_buffer: 1.05
+
+backtest:
+  plot: false

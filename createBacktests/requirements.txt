@@ -1,0 +1,5 @@
+backtrader==1.9.78.123
+matplotlib>=3.9,<4
+pandas>=2.2,<3
+pyarrow>=18,<23
+PyYAML>=6,<7
