@@ -207,3 +207,27 @@ python ./createDividendsReports.py \
 ```bash
 python ./createDividendsReports.py --help
 ```
+
+## Скрипт runFuturesBacktest.py
+
+В директории **createBacktests** добавлен отдельный модуль для бэктеста стратегии на **backtrader** с фьючерсной логикой исполнения.
+
+Особенности реализации:
+
+- стратегия работает на `Parabolic SAR`
+- дополнительно используется `EMA` как фильтр направления тренда
+- брокер переводится в режим `futures-like` через `commission + margin + mult`
+- поддерживаются `long` и `short`, что важно для фьючерсов
+
+Пример запуска:
+
+```bash
+python ./createBacktests/runFuturesBacktest.py \
+  -f ./createBacktests/configureFuturesBacktest.yml
+```
+
+Отдельные зависимости для модуля лежат в:
+
+```bash
+./createBacktests/requirements.txt
+```
