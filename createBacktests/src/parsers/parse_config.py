@@ -19,6 +19,19 @@ def _resolve_path(base_directory: Path, raw_path: str) -> Path:
     return (base_directory / candidate).resolve()
 
 
+def _strategy_name(strategy_section: dict) -> str:
+    configured_name = str(strategy_section.get("name", "")).strip().lower()
+    if configured_name:
+        return configured_name
+
+    psar_keys = {"psar_period", "psar_af", "psar_afmax"}
+    adx_keys = {"adx_period", "adx_entry_level", "adx_exit_level"}
+    if psar_keys.intersection(strategy_section) and not adx_keys.intersection(strategy_section):
+        return "psar"
+
+    return "adx"
+
+
 def parseConfigFile(configPath: str) -> FuturesBacktestConfig:
     config_file = Path(configPath).expanduser().resolve()
     if not config_file.exists():
@@ -50,12 +63,18 @@ def parseConfigFile(configPath: str) -> FuturesBacktestConfig:
         multiplier=float(broker_section.get("multiplier", 10.0)),
     )
     strategy_config = StrategyConfig(
+        name=_strategy_name(strategy_section),
         contracts=max(1, int(strategy_section.get("contracts", 1))),
         allow_short=bool(strategy_section.get("allow_short", True)),
+        adx_period=max(2, int(strategy_section.get("adx_period", 14))),
+        adx_entry_level=max(0.0, float(strategy_section.get("adx_entry_level", 25.0))),
+        adx_exit_level=max(0.0, float(strategy_section.get("adx_exit_level", 20.0))),
         psar_period=max(2, int(strategy_section.get("psar_period", 2))),
         psar_af=float(strategy_section.get("psar_af", 0.02)),
         psar_afmax=float(strategy_section.get("psar_afmax", 0.2)),
         ema_period=max(2, int(strategy_section.get("ema_period", 50))),
+        atr_period=max(2, int(strategy_section.get("atr_period", 14))),
+        atr_stop_multiplier=max(0.0, float(strategy_section.get("atr_stop_multiplier", 2.0))),
         margin_buffer=max(1.0, float(strategy_section.get("margin_buffer", 1.05))),
     )
     runtime_config = RuntimeConfig(

@@ -19,12 +19,18 @@ class BrokerConfig:
 
 @dataclass(slots=True)
 class StrategyConfig:
+    name: str = "adx"
     contracts: int = 1
     allow_short: bool = True
+    adx_period: int = 14
+    adx_entry_level: float = 25.0
+    adx_exit_level: float = 20.0
     psar_period: int = 2
     psar_af: float = 0.02
     psar_afmax: float = 0.2
     ema_period: int = 50
+    atr_period: int = 14
+    atr_stop_multiplier: float = 2.0
     margin_buffer: float = 1.05
 
 

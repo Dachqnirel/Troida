@@ -20,19 +20,29 @@ cerebro.broker.setcommission(
 )
 ```
 
-## Логика стратегии
+## Логика стратегии ADX
 
-Стратегия `FuturesParabolicSARStrategy` использует:
+Стратегия `FuturesADXStrategy` использует:
 
-- `Parabolic SAR` как основной сигнал на вход/разворот
+- `ADX` как фильтр силы тренда
+- `+DI` и `-DI` как сигнал направления тренда
 - `EMA` как фильтр направления тренда
+- `ATR` для защитного стопа
 - long и short, что типично для фьючерсной торговли
 
 Правила:
 
-- если `close > PSAR` и `close > EMA` -> открывается или удерживается `long`
-- если `close < PSAR` и `close < EMA` -> открывается или удерживается `short`
-- если сигнал нейтральный -> позиция закрывается
+- если `ADX >= adx_entry_level`, `+DI > -DI` и `close > EMA` -> открывается или удерживается `long`
+- если `ADX >= adx_entry_level`, `-DI > +DI` и `close < EMA` -> открывается или удерживается `short`
+- если ADX падает ниже `adx_exit_level` -> позиция закрывается
+- если цена проходит против позиции больше чем `ATR * atr_stop_multiplier` от цены входа -> позиция закрывается
+
+В YAML-конфигурации стратегия выбирается параметром `strategy.name`:
+
+- `adx` запускает `FuturesADXStrategy`
+- `psar` запускает прежнюю `FuturesParabolicSARStrategy`
+
+Старые конфиги с `psar_period`, `psar_af` или `psar_afmax` без `strategy.name` также будут распознаны как PSAR-конфиги.
 
 ## Запуск
 

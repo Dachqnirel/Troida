@@ -74,13 +74,19 @@ def build_run_summary(
             "multiplier": config.broker.multiplier,
         },
         "strategy": {
-            "name": "FuturesParabolicSARStrategy",
+            "name": strategy.__class__.__name__,
+            "configured_name": config.strategy.name,
             "contracts": config.strategy.contracts,
             "allow_short": config.strategy.allow_short,
+            "adx_period": config.strategy.adx_period,
+            "adx_entry_level": config.strategy.adx_entry_level,
+            "adx_exit_level": config.strategy.adx_exit_level,
             "psar_period": config.strategy.psar_period,
             "psar_af": config.strategy.psar_af,
             "psar_afmax": config.strategy.psar_afmax,
             "ema_period": config.strategy.ema_period,
+            "atr_period": config.strategy.atr_period,
+            "atr_stop_multiplier": config.strategy.atr_stop_multiplier,
         },
         "performance": {
             "pnl_absolute": pnl_absolute,
@@ -119,6 +125,24 @@ def format_run_summary(summary: dict[str, Any]) -> str:
     trades = summary["trades"]
     strategy = summary["strategy"]
     period = summary["period"]
+    if strategy["configured_name"] == "psar":
+        strategy_params = (
+            f"name={strategy['name']}, "
+            f"contracts={strategy['contracts']}, "
+            f"allow_short={strategy['allow_short']}, "
+            f"psar=({strategy['psar_period']}, {strategy['psar_af']}, {strategy['psar_afmax']}), "
+            f"ema={strategy['ema_period']}"
+        )
+    else:
+        strategy_params = (
+            f"name={strategy['name']}, "
+            f"contracts={strategy['contracts']}, "
+            f"allow_short={strategy['allow_short']}, "
+            f"adx=({strategy['adx_period']}, entry={strategy['adx_entry_level']}, "
+            f"exit={strategy['adx_exit_level']}), "
+            f"ema={strategy['ema_period']}, "
+            f"atr_stop=({strategy['atr_period']}, x{strategy['atr_stop_multiplier']})"
+        )
 
     lines = [
         "===== Итоги фьючерсного бэктеста =====",
@@ -134,13 +158,7 @@ def format_run_summary(summary: dict[str, Any]) -> str:
             f"margin={broker['margin']}, "
             f"multiplier={broker['multiplier']}"
         ),
-        (
-            "Параметры стратегии: "
-            f"contracts={strategy['contracts']}, "
-            f"allow_short={strategy['allow_short']}, "
-            f"psar=({strategy['psar_period']}, {strategy['psar_af']}, {strategy['psar_afmax']}), "
-            f"ema={strategy['ema_period']}"
-        ),
+        f"Параметры стратегии: {strategy_params}",
         (
             "Сделки: "
             f"closed={trades['total_closed']}, "

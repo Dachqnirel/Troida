@@ -16,12 +16,15 @@ broker:
   multiplier: 10.0
 
 strategy:
+  name: "adx"
   contracts: 1
   allow_short: true
-  psar_period: 2
-  psar_af: 0.02
-  psar_afmax: 0.2
+  adx_period: 14
+  adx_entry_level: 25.0
+  adx_exit_level: 20.0
   ema_period: 50
+  atr_period: 14
+  atr_stop_multiplier: 2.0
   margin_buffer: 1.05
 
 backtest:
