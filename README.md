@@ -201,6 +201,7 @@ timestamp,datetime,open,high,low,close,volume,turnover
 
 ## Конфигурация (.env)
 
+
 Создайте файл `.env` в директории скрипта для настройки логирования:
 
 ```env
