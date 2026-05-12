@@ -1,0 +1,13 @@
+services:
+  api:
+    build: .
+    ports:
+      - "8000:8000"
+    env_file:
+      - .env
+
+  test:
+    build: .
+    environment:
+      - TINKOFF_TOKEN=test_token  # stub value — tests set this themselves via conftest.py
+    command: ["pytest", "tests/", "-v"]
