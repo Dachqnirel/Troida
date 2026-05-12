@@ -1,2 +1,4 @@
 pybit
 python-dotenv
+fastapi
+uvicorn

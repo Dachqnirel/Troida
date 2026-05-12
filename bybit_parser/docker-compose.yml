@@ -1,0 +1,11 @@
+services:
+  byparser:
+    build: .
+    ports:
+      - "80:80"
+    volumes:
+      - ./logs:/app/logs
+      - ./output:/app/output
+    env_file:
+      - .env
+    restart: unless-stopped

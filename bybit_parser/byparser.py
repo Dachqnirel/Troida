@@ -2,6 +2,7 @@ from pybit.unified_trading import HTTP
 from datetime import datetime
 from logging.handlers import RotatingFileHandler
 from dotenv import load_dotenv
+from typing import Optional
 import argparse
 import csv
 import logging
@@ -24,12 +25,6 @@ VALID_CATEGORIES = ["spot", "linear", "inverse"]
 # ─────────────────────────── Логирование ─────────────────────────────
 
 def setup_logger() -> logging.Logger:
-    """
-    Настраивает логгер на основе переменных окружения из .env:
-      LOG_PATH           — директория для лог-файлов   (по умолчанию: logs)
-      LOG_FILE_SIZE      — максимальный размер файла   (по умолчанию: 5 МБ)
-      BACKUP_FILES_COUNT — количество резервных копий  (по умолчанию: 5)
-    """
     load_dotenv()
 
     log_dir    = os.getenv("LOG_PATH", "logs")
@@ -59,8 +54,6 @@ def setup_logger() -> logging.Logger:
     log.addHandler(file_handler)
     log.addHandler(console_handler)
 
-    log.debug("Логгер инициализирован. Файл: %s (макс %d байт, %d резервных копий)",
-              log_file, max_bytes, backup_cnt)
     return log
 
 
@@ -73,8 +66,6 @@ class BybitCandles:
     def __init__(self):
         self.session = HTTP()
 
-    # ── публичный метод ──────────────────────────────────────────────
-
     def get_candles(
         self,
         symbol:    str,
@@ -84,29 +75,11 @@ class BybitCandles:
         start_ms:  int  | None = None,
         end_ms:    int  | None = None,
     ) -> list[dict] | None:
-        """
-        Загрузить свечи с Bybit.
-
-        Если переданы start_ms / end_ms — выполняет пагинацию и возвращает
-        все свечи в указанном диапазоне. Иначе возвращает последние `limit`
-        свечей (макс 200).
-
-        Args:
-            symbol   : торговая пара, напр. "BTCUSDT"
-            interval : таймфрейм (1,3,5,15,30,60,120,240,360,720,D,W,M)
-            category : "spot" | "linear" | "inverse"
-            limit    : количество свечей при запросе без диапазона (макс 200)
-            start_ms : начало диапазона в миллисекундах (UTC)
-            end_ms   : конец  диапазона в миллисекундах (UTC)
-        """
         if start_ms or end_ms:
             return self._get_range(symbol, interval, category, start_ms, end_ms)
         return self._get_last(symbol, interval, category, limit)
 
-    # ── приватные методы ─────────────────────────────────────────────
-
     def _get_last(self, symbol, interval, category, limit):
-        """Получить последние `limit` свечей."""
         logger.info("Запрос последних %d свеч: %s | %s | %s", limit, symbol, category, interval)
         try:
             response = self.session.get_kline(
@@ -123,11 +96,6 @@ class BybitCandles:
             return None
 
     def _get_range(self, symbol, interval, category, start_ms, end_ms):
-        """
-        Получить все свечи в диапазоне [start_ms, end_ms] через пагинацию.
-        Bybit возвращает максимум 200 свечей за запрос, поэтому при большом
-        диапазоне выполняется несколько запросов.
-        """
         start_str = datetime.fromtimestamp(start_ms / 1000).strftime("%Y-%m-%d %H:%M:%S") if start_ms else "—"
         end_str   = datetime.fromtimestamp(end_ms   / 1000).strftime("%Y-%m-%d %H:%M:%S") if end_ms   else "сейчас"
         logger.info("Запрос диапазона: %s | %s | %s  [%s → %s]",
@@ -157,13 +125,11 @@ class BybitCandles:
 
                 logger.debug("Страница %d: получено %d свеч (до %s)", page, len(batch), batch[-1]["datetime"])
 
-                # Добавляем в начало — пагинация идёт назад во времени
                 all_candles = batch + all_candles
 
                 if len(batch) < 200:
-                    break  # данных больше нет
+                    break
 
-                # Следующий запрос: сдвигаем конец на одну позицию раньше старейшей свечи
                 current_end = batch[0]["timestamp"] - 1
 
                 if start_ms and current_end < start_ms:
@@ -173,7 +139,6 @@ class BybitCandles:
                 logger.exception("Исключение при пагинации (страница %d): %s", page, e)
                 break
 
-        # Точная обрезка по заданным границам
         if start_ms:
             all_candles = [c for c in all_candles if c["timestamp"] >= start_ms]
         if end_ms:
@@ -196,23 +161,12 @@ class BybitCandles:
                 "volume":    float(c[5]),
                 "turnover":  float(c[6]) if len(c) > 6 else 0.0,
             })
-        return candles[::-1]  # хронологический порядок
+        return candles[::-1]
 
 
 # ─────────────────────────── Детектор аномалий ───────────────────────
 
 class AnomalyDetector:
-    """
-    Проверяет свечи на аномалии и исправляет их.
-
-    Виды аномалий:
-      1. Нарушение OHLC-логики  (high < low, high < open/close, low > open/close)
-      2. Нулевой / отрицательный объём
-      3. Ценовые выбросы        (отклонение close > Z_THRESHOLD σ от скользящего среднего)
-      4. Дубли по timestamp
-      5. Пропуски в хронологии  (gap > 2 × ожидаемый интервал)
-    """
-
     Z_THRESHOLD = 3.0
     WINDOW      = 20
 
@@ -320,7 +274,6 @@ def save_csv(candles: list[dict], filepath: str) -> None:
 # ─────────────────────────── Утилиты ─────────────────────────────────
 
 def parse_date(value: str) -> int:
-    """Преобразует строку 'YYYY-MM-DD' или 'YYYY-MM-DD HH:MM:SS' в миллисекунды UTC."""
     for fmt in ("%Y-%m-%d %H:%M:%S", "%Y-%m-%d"):
         try:
             return int(datetime.strptime(value, fmt).timestamp() * 1000)
@@ -331,66 +284,137 @@ def parse_date(value: str) -> int:
     )
 
 
+def fetch_and_clean(
+    symbol: str,
+    interval: str,
+    category: str = "spot",
+    limit: int = 200,
+    start_ms: Optional[int] = None,
+    end_ms: Optional[int] = None,
+) -> list[dict]:
+    """Общая логика: получить свечи + очистить аномалии."""
+    candles = BybitCandles().get_candles(
+        symbol=symbol, interval=interval, category=category,
+        limit=limit, start_ms=start_ms, end_ms=end_ms,
+    )
+    if not candles:
+        return []
+    cleaned, _ = AnomalyDetector(INTERVAL_MINUTES.get(interval, 60)).check_and_fix(candles)
+    return cleaned
+
+
+# ─────────────────────────── HTTP-сервер (FastAPI) ────────────────────
+
+def create_app():
+    from fastapi import FastAPI, Query, HTTPException
+    from fastapi.responses import JSONResponse
+
+    app = FastAPI(
+        title="Bybit Candles API",
+        description="GET /candles — получить свечи с Bybit",
+        version="1.0.0",
+    )
+
+    @app.get("/candles")
+    def get_candles(
+        symbol:   str = Query(...,  description="Торговая пара: BTCUSDT, ETHUSDT и т.д."),
+        interval: str = Query(...,  description=f"Таймфрейм: {', '.join(VALID_INTERVALS)}"),
+        category: str = Query("spot", description=f"Тип рынка: {', '.join(VALID_CATEGORIES)}"),
+        limit:    int = Query(200,  ge=1, le=200, description="Кол-во свечей (без диапазона, макс 200)"),
+        start:    Optional[str] = Query(None, description="Начало диапазона: YYYY-MM-DD или YYYY-MM-DD HH:MM:SS (UTC)"),
+        end:      Optional[str] = Query(None, description="Конец диапазона:  YYYY-MM-DD или YYYY-MM-DD HH:MM:SS (UTC)"),
+    ):
+        """
+        Вернуть свечи в JSON.
+
+        Примеры:
+        - `/candles?symbol=BTCUSDT&interval=60&category=spot&limit=100`
+        - `/candles?symbol=ETHUSDT&interval=15&category=linear&start=2024-01-01&end=2024-02-01`
+        """
+        symbol = symbol.upper()
+
+        if interval not in VALID_INTERVALS:
+            raise HTTPException(status_code=400, detail=f"interval должен быть одним из: {VALID_INTERVALS}")
+        if category not in VALID_CATEGORIES:
+            raise HTTPException(status_code=400, detail=f"category должен быть одним из: {VALID_CATEGORIES}")
+
+        start_ms = None
+        end_ms   = None
+        if start:
+            try:
+                start_ms = parse_date(start)
+            except Exception:
+                raise HTTPException(status_code=400, detail=f"Неверный формат start: '{start}'")
+        if end:
+            try:
+                end_ms = parse_date(end)
+            except Exception:
+                raise HTTPException(status_code=400, detail=f"Неверный формат end: '{end}'")
+
+        candles = fetch_and_clean(
+            symbol=symbol, interval=interval, category=category,
+            limit=limit, start_ms=start_ms, end_ms=end_ms,
+        )
+
+        if not candles:
+            raise HTTPException(status_code=404, detail="Свечи не получены. Проверьте параметры.")
+
+        return JSONResponse(content={"count": len(candles), "candles": candles})
+
+    return app
+
+
 # ─────────────────────────── Argparse ────────────────────────────────
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="byparser",
-        description="Парсер свечей Bybit с очисткой аномалий и экспортом в CSV.",
+        description="Парсер свечей Bybit. Режимы: CLI (--symbol ...) или HTTP-сервер (--serve).",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Примеры:
-  # Последние 200 часовых свечей BTC (спот)
+  # HTTP-сервер на порту 8000
+  python byparser.py --serve
+
+  # HTTP-сервер на своём порту
+  python byparser.py --serve --host 0.0.0.0 --port 9000
+
+  # CLI: последние 200 часовых свечей BTC (спот)
   python byparser.py -s BTCUSDT -c spot -i 60 -l 200 -o btc.csv
 
-  # Все 15-минутные свечи ETH (фьючерс) за январь 2024
+  # CLI: все 15-минутные свечи ETH (фьючерс) за январь 2024
   python byparser.py -s ETHUSDT -c linear -i 15 --start 2024-01-01 --end 2024-02-01 -o eth.csv
         """,
     )
 
+    # ── Режим сервера ────────────────────────────────────────────────
     parser.add_argument(
-        "-s", "--symbol",
-        required=True,
-        metavar="ПАРА",
-        help="Торговая пара: BTCUSDT, ETHUSDT и т.д.",
+        "--serve",
+        action="store_true",
+        help="Запустить HTTP-сервер (FastAPI + uvicorn)",
     )
     parser.add_argument(
-        "-c", "--category",
-        required=True,
-        choices=VALID_CATEGORIES,
-        help=f"Тип рынка: {', '.join(VALID_CATEGORIES)}",
+        "--host",
+        default="127.0.0.1",
+        metavar="HOST",
+        help="Адрес для HTTP-сервера (по умолчанию: 127.0.0.1)",
     )
     parser.add_argument(
-        "-i", "--interval",
-        required=True,
-        choices=VALID_INTERVALS,
-        metavar="ИНТЕРВАЛ",
-        help=f"Таймфрейм свечи: {', '.join(VALID_INTERVALS)}",
-    )
-    parser.add_argument(
-        "--start",
-        type=parse_date,
-        metavar="ДАТА",
-        help="Начало диапазона: YYYY-MM-DD или 'YYYY-MM-DD HH:MM:SS' (UTC)",
-    )
-    parser.add_argument(
-        "--end",
-        type=parse_date,
-        metavar="ДАТА",
-        help="Конец диапазона:  YYYY-MM-DD или 'YYYY-MM-DD HH:MM:SS' (UTC)",
-    )
-    parser.add_argument(
-        "-l", "--limit",
+        "--port",
         type=int,
-        default=200,
-        metavar="N",
-        help="Количество свечей без диапазона (1–200, по умолчанию 200). Игнорируется при --start/--end.",
+        default=8000,
+        metavar="PORT",
+        help="Порт для HTTP-сервера (по умолчанию: 8000)",
     )
-    parser.add_argument(
-        "-o", "--output",
-        metavar="ФАЙЛ",
-        help="Путь для сохранения CSV (по умолчанию: <ПАРА>_<ТИП>_<ИНТЕРВАЛ>.csv)",
-    )
+
+    # ── CLI-параметры ────────────────────────────────────────────────
+    parser.add_argument("-s", "--symbol",   metavar="ПАРА",     help="Торговая пара: BTCUSDT, ETHUSDT и т.д.")
+    parser.add_argument("-c", "--category", choices=VALID_CATEGORIES, help=f"Тип рынка: {', '.join(VALID_CATEGORIES)}")
+    parser.add_argument("-i", "--interval", choices=VALID_INTERVALS,  metavar="ИНТЕРВАЛ", help=f"Таймфрейм: {', '.join(VALID_INTERVALS)}")
+    parser.add_argument("--start", type=parse_date, metavar="ДАТА", help="Начало диапазона (UTC)")
+    parser.add_argument("--end",   type=parse_date, metavar="ДАТА", help="Конец диапазона  (UTC)")
+    parser.add_argument("-l", "--limit", type=int, default=200, metavar="N", help="Количество свечей без диапазона (1–200)")
+    parser.add_argument("-o", "--output", metavar="ФАЙЛ", help="Путь для сохранения CSV")
 
     return parser
 
@@ -399,16 +423,33 @@ def build_parser() -> argparse.ArgumentParser:
 
 def main():
     args = build_parser().parse_args()
-    symbol = args.symbol.upper()
+
+    # ── Режим HTTP-сервера ───────────────────────────────────────────
+    if args.serve:
+        try:
+            import uvicorn
+        except ImportError:
+            print("Для сервера установите зависимости: pip install fastapi uvicorn")
+            return
+        app = create_app()
+        logger.info("Запуск HTTP-сервера на http://%s:%d  (документация: /docs)", args.host, args.port)
+        uvicorn.run(app, host=args.host, port=args.port)
+        return
+
+    # ── CLI-режим ────────────────────────────────────────────────────
+    if not args.symbol or not args.category or not args.interval:
+        build_parser().error("В CLI-режиме обязательны: -s/--symbol, -c/--category, -i/--interval")
+
+    symbol   = args.symbol.upper()
     category = args.category
     interval = args.interval
-    limit = max(1, min(args.limit, 200))
+    limit    = max(1, min(args.limit, 200))
     start_ms = args.start
-    end_ms = args.end
+    end_ms   = args.end
     out_file = args.output or f"{symbol}_{category}_{interval}.csv"
 
     logger.info(
-        "Запуск: symbol=%s  category=%s  interval=%s  limit=%s  start=%s  end=%s  output=%s",
+        "Запуск CLI: symbol=%s  category=%s  interval=%s  limit=%s  start=%s  end=%s  output=%s",
         symbol, category, interval,
         limit if not (start_ms or end_ms) else "—(диапазон)",
         datetime.fromtimestamp(start_ms / 1000).strftime("%Y-%m-%d %H:%M:%S") if start_ms else "—",
@@ -416,22 +457,14 @@ def main():
         out_file,
     )
 
-    candles = BybitCandles().get_candles(
+    cleaned = fetch_and_clean(
         symbol=symbol, interval=interval, category=category,
         limit=limit, start_ms=start_ms, end_ms=end_ms,
     )
 
-    if not candles:
+    if not cleaned:
         logger.error("Свечи не получены. Проверьте параметры.")
         return
-
-    cleaned, removed = AnomalyDetector(INTERVAL_MINUTES.get(interval, 60)).check_and_fix(candles)
-
-    if removed:
-        logger.info("Устранено %d проблем(ы). Осталось %d свеч из %d.",
-                    removed, len(cleaned), len(candles))
-    else:
-        logger.info("Аномалий не обнаружено.")
 
     save_csv(cleaned, out_file)
 
